@@ -1,0 +1,19 @@
+[package]
+name = "sim"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Deterministic desktop simulator that drives many virtual meshcore nodes over an in-memory transport."
+
+[[bin]]
+name = "sim"
+path = "src/main.rs"
+
+[dependencies]
+meshcore = { path = "../meshcore" }
+rand = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }

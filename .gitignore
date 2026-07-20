@@ -25,3 +25,12 @@ replay_pid*
 
 # Kotlin Gradle plugin data, see https://kotlinlang.org/docs/whatsnew20.html#new-directory-for-kotlin-data-in-gradle-projects
 .kotlin/
+# Rust
+/target
+**/target
+Cargo.lock.orig
+
+# Claude Code local/session state (ralph-loop state is ephemeral, per-session)
+.claude/settings.local.json
+.claude/*.local.md
+.claude/ralph-loop.local.md

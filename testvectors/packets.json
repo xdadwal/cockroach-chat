@@ -1,0 +1,56 @@
+{
+  "note": "Canonical wire vectors. Regenerate with REGEN_VECTORS=1; bump protocol_version on any change.",
+  "packets": [
+    {
+      "description": "A public channel message with no recipient (broadcast).",
+      "digest": "3257c4084ac5ac0b",
+      "hex": "010200070000018bcfe56800285458728b0ba1cb000a68656c6c6f206d6573685ce2157efcfb4363d03ca214edb94fa312dce15958c5ec980c827f0a10db601aeaf2b78fa94aa7059936fffcb0a18d9144940fc10b4a3824ec164ae58ab32a0a",
+      "name": "channel_broadcast",
+      "sender": "285458728b0ba1cb",
+      "ttl": 7,
+      "type": 2,
+      "version": 1
+    },
+    {
+      "description": "A directed packet carrying an 8-byte recipient ephemeral id.",
+      "digest": "89899ca58ab41d3a",
+      "hex": "010301050000018bcfe56801285458728b0ba1cbabababababababab0014636970686572746578742d676f65732d686572658afb4b6d00fec0994d65d7ac8f52bc0687f47e28576480bed57ca1c2ea6bc42a5ffec36c974031126e0f37a2e553a4f5cf4c12b5519816110e5f5037e2696b0e",
+      "name": "direct_message",
+      "sender": "285458728b0ba1cb",
+      "ttl": 5,
+      "type": 3,
+      "version": 1
+    },
+    {
+      "description": "An identity announce carrying an opaque payload.",
+      "digest": "7fe12477a51552af",
+      "hex": "010100070000018bcfe56802285458728b0ba1cb000401020304cd7aa8397546d492bd3206547be1e1069222211bf69a81bf044a7c774218177dc490db878977c1c26c9161a8b393ec42d491c4256d21a0c9eedb90704485d702",
+      "name": "announce",
+      "sender": "285458728b0ba1cb",
+      "ttl": 7,
+      "type": 1,
+      "version": 1
+    },
+    {
+      "description": "An unknown message type (0x7f) — relays must forward it unparsed.",
+      "digest": "0e99da1d90a2f815",
+      "hex": "017f00030000018bcfe56803285458728b0ba1cb0004deadbeef8c6340e4a5565208a7b35a20b6a86245c1969d90a95fc11bbf98d8c209cfe37c1eae0b6999c86fb535043031520f92ec407b15c7ab53e114507c19eba8888f0a",
+      "name": "unknown_type_preserved",
+      "sender": "285458728b0ba1cb",
+      "ttl": 3,
+      "type": 127,
+      "version": 1
+    },
+    {
+      "description": "A zero-length payload (boundary case for the decoder).",
+      "digest": "1d7845d854fad0a5",
+      "hex": "010500010000018bcfe56804285458728b0ba1cb0000d2df0cec809dacac7e3ebb3796ff3892a54cb25f4b718ddb06b99fd158f229e2321fc48d6255fd61144ab93a7a1c5536a05da3340809d44530173fb14f247109",
+      "name": "empty_payload",
+      "sender": "285458728b0ba1cb",
+      "ttl": 1,
+      "type": 5,
+      "version": 1
+    }
+  ],
+  "protocol_version": 1
+}
