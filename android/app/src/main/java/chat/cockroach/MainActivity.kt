@@ -110,7 +110,17 @@ private fun BleScreen(ble: BleController) {
             }
             ThreadCard("📱 ${Build.MODEL} · #general", ble.messages, Modifier.weight(1f), enabled = false) {}
         } else {
-            Text("● live — eph ${ble.ephId.value.take(8)}", color = MaterialTheme.colorScheme.primary)
+            // One shared identity QR (your fingerprint is the same for everyone).
+            var showMyQr by remember { mutableStateOf(false) }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "● live — eph ${ble.ephId.value.take(8)}",
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedButton(onClick = { showMyQr = true }) { Text("My QR") }
+            }
+            if (showMyQr) MyQrDialog(ble.myFingerprint()) { showMyQr = false }
 
             // Selector: the public channel, or an encrypted DM thread with a discovered peer.
             var selected by remember { mutableStateOf<String?>(null) }
@@ -134,7 +144,6 @@ private fun BleScreen(ble: BleController) {
                     peerFp = sel,
                     verified = peer?.verified == true,
                     petname = name,
-                    myFingerprint = ble.myFingerprint(),
                     onSetPetname = { ble.setPetname(sel, it) },
                     onVerified = { ble.verify(sel) },
                 )
@@ -182,59 +191,38 @@ private fun VerifyBar(
     peerFp: String,
     verified: Boolean,
     petname: String,
-    myFingerprint: String,
     onSetPetname: (String) -> Unit,
     onVerified: () -> Unit,
 ) {
-    var showQr by remember { mutableStateOf(false) }
     var name by remember(peerFp) { mutableStateOf(petname) }
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         val scanned = result.contents
         if (scanned != null && scanned.equals(peerFp, ignoreCase = true)) onVerified()
     }
-    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                if (verified) "✓ verified" else "unverified",
-                fontSize = 11.sp,
-                color = if (verified) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it; onSetPetname(it) },
-                placeholder = { Text("petname") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-        }
-        // Both actions are always visible — no scan option hidden inside a dialog.
-        Row(
-            Modifier.fillMaxWidth().padding(top = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedButton(onClick = { showQr = true }, modifier = Modifier.weight(1f)) {
-                Text("Show my QR")
-            }
-            Button(
-                onClick = {
-                    scanLauncher.launch(
-                        ScanOptions()
-                            .setPrompt("Scan their fingerprint QR")
-                            .setBeepEnabled(false)
-                            .setOrientationLocked(false)
-                    )
-                },
-                enabled = !verified,
-                modifier = Modifier.weight(1f),
-            ) { Text(if (verified) "Verified ✓" else "Scan to verify") }
-        }
-    }
-    if (showQr) {
-        MyQrDialog(myFingerprint) { showQr = false }
+    Row(
+        Modifier.fillMaxWidth().padding(top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it; onSetPetname(it) },
+            placeholder = { Text("petname") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        // Per-peer action: scan their QR to verify; disabled once verified.
+        Button(
+            onClick = {
+                scanLauncher.launch(
+                    ScanOptions()
+                        .setPrompt("Scan their fingerprint QR")
+                        .setBeepEnabled(false)
+                        .setOrientationLocked(false)
+                )
+            },
+            enabled = !verified,
+        ) { Text(if (verified) "✓ Verified" else "Verify") }
     }
 }
 
