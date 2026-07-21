@@ -14,8 +14,8 @@ android {
         versionCode = 1
         versionName = "0.1"
         ndk {
-            // The Rust .so is prebuilt into jniLibs by scripts/build-android-lib.sh.
-            abiFilters += "arm64-v8a"
+            // Rust .so libs are prebuilt into jniLibs by scripts/build-android-lib.sh.
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
         }
     }
 

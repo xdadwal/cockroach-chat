@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# Cross-compiles meshcore-ffi to a .so for the Android emulator/device (arm64-v8a) and drops it
-# into the app's jniLibs, plus regenerates the Kotlin UniFFI bindings. Run before ./gradlew.
+# Cross-compiles meshcore-ffi to .so libraries for all common Android ABIs and drops them into
+# the app's jniLibs, plus regenerates the Kotlin UniFFI bindings. Run before ./gradlew.
+#
+# Produces a universal APK that installs on virtually any Android device:
+#   arm64-v8a    — modern phones (default)
+#   armeabi-v7a  — older / cheap 32-bit devices
+#   x86_64       — emulators
 #
 # In a production setup this is wired into Gradle via org.mozilla.rust-android-gradle; a plain
 # script keeps the toolchain legible and CI-friendly for now.
@@ -11,24 +16,25 @@ NDK="${ANDROID_NDK_HOME:-$HOME/Library/Android/sdk/ndk/28.2.13676358}"
 HOST_TAG="darwin-x86_64" # NDK ships x86_64 host binaries (run via Rosetta on Apple Silicon)
 TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/$HOST_TAG/bin"
 API=26
-ABI_DIR="android/app/src/main/jniLibs/arm64-v8a"
 
-export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android${API}-clang"
-export CC_aarch64_linux_android="$TOOLCHAIN/aarch64-linux-android${API}-clang"
-export AR_aarch64_linux_android="$TOOLCHAIN/llvm-ar"
+# triple : jniLibs abi dir : clang wrapper prefix : cargo linker env var stem
+build_abi() {
+  local triple="$1" abi="$2" clang="$3" var="$4"
+  echo "==> building $triple -> $abi"
+  export "CARGO_TARGET_${var}_LINKER=$TOOLCHAIN/$clang"
+  cargo build -p meshcore-ffi --target "$triple" --release
+  mkdir -p "android/app/src/main/jniLibs/$abi"
+  cp "target/$triple/release/libmeshcore_ffi.so" "android/app/src/main/jniLibs/$abi/"
+}
 
-echo "==> building meshcore-ffi for aarch64-linux-android"
-cargo build -p meshcore-ffi --target aarch64-linux-android --release
-
-mkdir -p "$ABI_DIR"
-cp target/aarch64-linux-android/release/libmeshcore_ffi.so "$ABI_DIR/"
-echo "==> copied libmeshcore_ffi.so -> $ABI_DIR"
+build_abi aarch64-linux-android   arm64-v8a   "aarch64-linux-android${API}-clang"    AARCH64_LINUX_ANDROID
+build_abi armv7-linux-androideabi armeabi-v7a "armv7a-linux-androideabi${API}-clang" ARMV7_LINUX_ANDROIDEABI
+build_abi x86_64-linux-android    x86_64      "x86_64-linux-android${API}-clang"     X86_64_LINUX_ANDROID
 
 echo "==> generating Kotlin bindings"
 BINDINGS="android/app/src/main/java"
 mkdir -p "$BINDINGS"
-# Generate from the host build (metadata is identical across targets).
 cargo build -p meshcore-ffi >/dev/null 2>&1
 cargo run -q -p meshcore-ffi --bin uniffi-bindgen -- \
   generate --library target/debug/libmeshcore_ffi.dylib --language kotlin --out-dir "$BINDINGS"
-echo "==> Kotlin bindings written under $BINDINGS/uniffi/"
+echo "==> done: jniLibs for arm64-v8a, armeabi-v7a, x86_64 + Kotlin bindings"
