@@ -186,48 +186,60 @@ private fun VerifyBar(
     onSetPetname: (String) -> Unit,
     onVerified: () -> Unit,
 ) {
-    var showDialog by remember { mutableStateOf(false) }
+    var showQr by remember { mutableStateOf(false) }
     var name by remember(peerFp) { mutableStateOf(petname) }
-    Row(
-        Modifier.fillMaxWidth().padding(top = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            if (verified) "✓ verified" else "unverified",
-            fontSize = 11.sp,
-            color = if (verified) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it; onSetPetname(it) },
-            placeholder = { Text("petname") },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-        )
-        Button(onClick = { showDialog = true }) { Text("Verify") }
-    }
-    if (showDialog) {
-        VerifyDialog(
-            peerFp = peerFp,
-            myFingerprint = myFingerprint,
-            onDismiss = { showDialog = false },
-            onVerified = { onVerified(); showDialog = false },
-        )
-    }
-}
-
-@Composable
-private fun VerifyDialog(
-    peerFp: String,
-    myFingerprint: String,
-    onDismiss: () -> Unit,
-    onVerified: () -> Unit,
-) {
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         val scanned = result.contents
         if (scanned != null && scanned.equals(peerFp, ignoreCase = true)) onVerified()
     }
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                if (verified) "✓ verified" else "unverified",
+                fontSize = 11.sp,
+                color = if (verified) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it; onSetPetname(it) },
+                placeholder = { Text("petname") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        // Both actions are always visible — no scan option hidden inside a dialog.
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(onClick = { showQr = true }, modifier = Modifier.weight(1f)) {
+                Text("Show my QR")
+            }
+            Button(
+                onClick = {
+                    scanLauncher.launch(
+                        ScanOptions()
+                            .setPrompt("Scan their fingerprint QR")
+                            .setBeepEnabled(false)
+                            .setOrientationLocked(false)
+                    )
+                },
+                enabled = !verified,
+                modifier = Modifier.weight(1f),
+            ) { Text(if (verified) "Verified ✓" else "Scan to verify") }
+        }
+    }
+    if (showQr) {
+        MyQrDialog(myFingerprint) { showQr = false }
+    }
+}
+
+@Composable
+private fun MyQrDialog(myFingerprint: String, onDismiss: () -> Unit) {
     val qr = remember(myFingerprint) {
         runCatching {
             BarcodeEncoder().encodeBitmap(myFingerprint, BarcodeFormat.QR_CODE, 512, 512).asImageBitmap()
@@ -235,25 +247,22 @@ private fun VerifyDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Verify in person") },
+        title = { Text("My fingerprint") },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Show this QR to them, then scan theirs.", fontSize = 12.sp)
+                Text("Have them scan this.", fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
                 qr?.let {
                     Image(bitmap = it, contentDescription = "my fingerprint QR", modifier = Modifier.size(200.dp))
                 }
-                Text(myFingerprint.take(16) + "…", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    myFingerprint.take(16) + "…",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         },
-        confirmButton = {
-            Button(onClick = {
-                scanLauncher.launch(
-                    ScanOptions().setPrompt("Scan their fingerprint QR").setBeepEnabled(false).setOrientationLocked(false)
-                )
-            }) { Text("Scan their QR") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        confirmButton = { Button(onClick = onDismiss) { Text("Done") } },
     )
 }
 
