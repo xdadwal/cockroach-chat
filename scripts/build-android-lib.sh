@@ -17,11 +17,20 @@ HOST_TAG="darwin-x86_64" # NDK ships x86_64 host binaries (run via Rosetta on Ap
 TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/$HOST_TAG/bin"
 API=26
 
+# SQLCipher's vendored OpenSSL (via meshcore-store) is cross-compiled from source, so openssl-src
+# and the cc crate need the NDK on PATH and the ANDROID_NDK_ROOT env set.
+export ANDROID_NDK_ROOT="$NDK"
+export ANDROID_NDK_HOME="$NDK"
+export PATH="$TOOLCHAIN:$PATH"
+
 # triple : jniLibs abi dir : clang wrapper prefix : cargo linker env var stem
 build_abi() {
   local triple="$1" abi="$2" clang="$3" var="$4"
+  local tu="${triple//-/_}"
   echo "==> building $triple -> $abi"
   export "CARGO_TARGET_${var}_LINKER=$TOOLCHAIN/$clang"
+  export "CC_${tu}=$TOOLCHAIN/$clang"       # for the cc crate + openssl-src
+  export "AR_${tu}=$TOOLCHAIN/llvm-ar"
   cargo build -p meshcore-ffi --target "$triple" --release
   mkdir -p "android/app/src/main/jniLibs/$abi"
   cp "target/$triple/release/libmeshcore_ffi.so" "android/app/src/main/jniLibs/$abi/"

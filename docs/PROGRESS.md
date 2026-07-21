@@ -54,7 +54,7 @@ Verify everything: `cargo test --workspace && cargo run -p sim -- --nodes 200 --
 - [x] `ttl_clamp_dense` — covered by `config` unit test (`origin_ttl`).
 
 ### SQLCipher + FFI (M0 tail — toolchain-gated, deferred to M1)
-- [!] `SqliteStore` via rusqlite + `bundled-sqlcipher-vendored-openssl`. **Gated:** needs an OpenSSL source build; the `Store` trait + `MemoryStore` already let all logic be tested without it. Land alongside the Android app (M1) where on-device storage is first needed.
+- [x] `SqliteStore` (crate `meshcore-store`) via rusqlite + `bundled-sqlcipher-vendored-openssl` — **done & verified**. Ciphertext-at-rest; the vendored-OpenSSL build cross-compiles to all 3 Android ABIs. Wired into the FFI (`new_persistent(db_path, db_key)` + `channel_history`) with an Android Keystore **KeyVault** (hardware-wrapped DB key + identity seed). Verified on-device: a message + identity survive a full app force-stop/relaunch, and `strings mesh.db` finds no plaintext. Panic wipe = clear rows + destroy the keystore key (unrecoverable ciphertext). 6 store unit tests incl. persists-across-reopen and wrong-key-cannot-read.
 - [!] `meshcore-ffi` UniFFI crate (`MeshNode` object + `BleTransport`/`KeyVault`/`EventListener` callbacks). **Gated/deferred to M1:** the sans-IO core is FFI-ready by construction; the FFI surface is most useful to build against the real Gradle/NDK integration.
 - [!] **JVM smoke test.** **Gated:** no JRE/Kotlin toolchain in this environment. This is the concrete M1 de-risking step — do it first thing in M1.
 

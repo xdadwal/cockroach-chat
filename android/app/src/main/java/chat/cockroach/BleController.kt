@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import uniffi.meshcore_ffi.FfiEvent
 import uniffi.meshcore_ffi.FfiMeshNode
+import java.io.File
 
 data class Peer(val fp: String, val name: String, val verified: Boolean)
 
@@ -49,16 +50,24 @@ class BleController(private val context: Context, private val scope: CoroutineSc
             onFrame = { link, frame -> node?.receiveFrame(link, frame) },
             onStatus = { s -> onMain { log.add(s) } },
         )
-        val n = FfiMeshNode(
-            seed = System.currentTimeMillis().toULong(),
+        // Persistent identity + encrypted (SQLCipher) store, keyed by the hardware-backed KeyVault.
+        val secrets = KeyVault.loadOrCreate(context)
+        val dbPath = File(context.filesDir, KeyVault.DB_NAME).absolutePath
+        val n = FfiMeshNode.newPersistent(
+            seed = secrets.seed.toULong(),
             nickname = Build.MODEL,
             transport = t,
+            dbPath = dbPath,
+            dbKey = secrets.dbKey,
         )
         node = n
         transport = t
         ephId.value = n.ephId()
         running.value = true
-        log.add("node up — eph ${n.ephId().take(8)} (${Build.MODEL})")
+        // Show persisted #general history from previous sessions (proves encryption-at-rest).
+        val history = n.channelHistory("#general", 200u)
+        for (m in history) messages.add(ChatMessage(m.body, mine = m.mine, verified = true))
+        log.add("node up — eph ${n.ephId().take(8)} · ${history.size} msgs restored")
         t.start()
         if (!ticking) {
             ticking = true

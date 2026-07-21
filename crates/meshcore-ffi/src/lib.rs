@@ -9,9 +9,11 @@
 //!   BLE, or a loopback/TCP stand-in for the emulator, where BLE is unavailable).
 //! * [`FfiEvent`] — drained by the UI via [`FfiMeshNode::poll_events`].
 
-use meshcore::identity::LocalIdentity;
-use meshcore::store::MemoryStore;
+use meshcore::clock::Millis;
+use meshcore::identity::{Fingerprint, LocalIdentity};
+use meshcore::store::{MemoryStore, PeerRecord, Store, StoredMessage};
 use meshcore::{Clock, MeshEvent, MeshNode, Transport, TransportEvent, Tunables};
+use meshcore_store::SqliteStore;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -47,6 +49,55 @@ impl Clock for SystemClock {
     }
 }
 
+/// One concrete store type so [`FfiMeshNode`] stays non-generic: the encrypted SQLite store on a
+/// device, or an in-memory store for the loopback demo / tests.
+enum FfiStore {
+    Memory(Box<MemoryStore>),
+    Sqlite(Box<SqliteStore>),
+}
+
+macro_rules! delegate {
+    ($self:ident, $m:ident ( $($a:expr),* )) => {
+        match $self {
+            FfiStore::Memory(s) => s.$m($($a),*),
+            FfiStore::Sqlite(s) => s.$m($($a),*),
+        }
+    };
+}
+
+impl Store for FfiStore {
+    fn put_channel_message(&mut self, msg: StoredMessage) {
+        delegate!(self, put_channel_message(msg))
+    }
+    fn has_message(&self, digest: &[u8; 8]) -> bool {
+        delegate!(self, has_message(digest))
+    }
+    fn channel_history(&self, channel: &str, limit: usize) -> Vec<StoredMessage> {
+        delegate!(self, channel_history(channel, limit))
+    }
+    fn channel_digests(&self, channel: &str) -> Vec<[u8; 8]> {
+        delegate!(self, channel_digests(channel))
+    }
+    fn message_by_digest(&self, digest: &[u8; 8]) -> Option<StoredMessage> {
+        delegate!(self, message_by_digest(digest))
+    }
+    fn upsert_peer(&mut self, peer: PeerRecord) {
+        delegate!(self, upsert_peer(peer))
+    }
+    fn get_peer(&self, fp: &Fingerprint) -> Option<PeerRecord> {
+        delegate!(self, get_peer(fp))
+    }
+    fn queue_envelope(&mut self, recipient: Fingerprint, packet_bytes: Vec<u8>, now_ms: Millis) {
+        delegate!(self, queue_envelope(recipient, packet_bytes, now_ms))
+    }
+    fn take_envelopes(&mut self, recipient: &Fingerprint) -> Vec<Vec<u8>> {
+        delegate!(self, take_envelopes(recipient))
+    }
+    fn panic_wipe(&mut self) {
+        delegate!(self, panic_wipe())
+    }
+}
+
 /// UI-facing event. Byte identifiers are hex-encoded for easy display.
 #[derive(uniffi::Enum)]
 pub enum FfiEvent {
@@ -77,39 +128,80 @@ pub enum FfiEvent {
     },
 }
 
+/// A stored channel message, for loading persisted history into the UI.
+#[derive(uniffi::Record)]
+pub struct FfiMessage {
+    pub sender: String,
+    pub body: String,
+    pub timestamp_ms: u64,
+    /// True if this node originated the message.
+    pub mine: bool,
+}
+
 /// The FFI handle to a running mesh node.
 #[derive(uniffi::Object)]
 pub struct FfiMeshNode {
-    inner: Mutex<MeshNode<FfiTransport, SystemClock, MemoryStore>>,
+    inner: Mutex<MeshNode<FfiTransport, SystemClock, FfiStore>>,
+}
+
+fn mem_store(cfg: &Tunables) -> MemoryStore {
+    MemoryStore::new(
+        cfg.channel_history_max_msgs,
+        cfg.channel_history_ms,
+        cfg.envelope_ttl_ms,
+        cfg.envelope_max_per_peer,
+    )
+}
+
+fn make_node(
+    seed: u64,
+    nickname: String,
+    transport: Box<dyn BleTransport>,
+    store: FfiStore,
+    cfg: Tunables,
+) -> Arc<FfiMeshNode> {
+    let mut id_seed = [0u8; 32];
+    id_seed[..8].copy_from_slice(&seed.to_le_bytes());
+    let node = MeshNode::new(
+        LocalIdentity::from_seed(&id_seed),
+        cfg,
+        FfiTransport { inner: transport },
+        SystemClock,
+        store,
+        nickname,
+        seed,
+    );
+    Arc::new(FfiMeshNode {
+        inner: Mutex::new(node),
+    })
 }
 
 #[uniffi::export]
 impl FfiMeshNode {
-    /// Create a node with a deterministic identity derived from `seed`, a display `nickname`, and
-    /// the platform `transport`.
+    /// Create a node with an in-memory store (loopback demo / tests).
     #[uniffi::constructor]
     pub fn new(seed: u64, nickname: String, transport: Box<dyn BleTransport>) -> Arc<Self> {
         let cfg = Tunables::default();
-        let mut id_seed = [0u8; 32];
-        id_seed[..8].copy_from_slice(&seed.to_le_bytes());
-        let store = MemoryStore::new(
-            cfg.channel_history_max_msgs,
-            cfg.channel_history_ms,
-            cfg.envelope_ttl_ms,
-            cfg.envelope_max_per_peer,
-        );
-        let node = MeshNode::new(
-            LocalIdentity::from_seed(&id_seed),
-            cfg,
-            FfiTransport { inner: transport },
-            SystemClock,
-            store,
-            nickname,
-            seed,
-        );
-        Arc::new(Self {
-            inner: Mutex::new(node),
-        })
+        let store = FfiStore::Memory(Box::new(mem_store(&cfg)));
+        make_node(seed, nickname, transport, store, cfg)
+    }
+
+    /// Create a node whose state persists to an encrypted (SQLCipher) database at `db_path`, keyed
+    /// with the 32-byte `db_key` (from the platform keystore). Falls back to an in-memory store if
+    /// the key is malformed or the database cannot be opened, so the node always runs.
+    #[uniffi::constructor]
+    pub fn new_persistent(
+        seed: u64,
+        nickname: String,
+        transport: Box<dyn BleTransport>,
+        db_path: String,
+        db_key: Vec<u8>,
+    ) -> Arc<Self> {
+        let cfg = Tunables::default();
+        let store = open_sqlite(&db_path, &db_key, &cfg)
+            .map(|s| FfiStore::Sqlite(Box::new(s)))
+            .unwrap_or_else(|| FfiStore::Memory(Box::new(mem_store(&cfg))));
+        make_node(seed, nickname, transport, store, cfg)
     }
 
     /// Our current ephemeral wire id (hex).
@@ -119,6 +211,22 @@ impl FfiMeshNode {
 
     pub fn join_channel(&self, name: String) {
         self.inner.lock().unwrap().join_channel(&name);
+    }
+
+    /// Load persisted history for a channel (oldest-first), so the UI can show it after a restart.
+    pub fn channel_history(&self, channel: String, limit: u32) -> Vec<FfiMessage> {
+        let node = self.inner.lock().unwrap();
+        let me = node.eph_id();
+        node.store()
+            .channel_history(&channel, limit as usize)
+            .into_iter()
+            .map(|m| FfiMessage {
+                sender: hex(&m.sender),
+                body: String::from_utf8_lossy(&m.body).to_string(),
+                timestamp_ms: m.timestamp_ms,
+                mine: m.sender == me,
+            })
+            .collect()
     }
 
     /// Re-broadcast our signed identity announce. Called periodically by the platform so peers
@@ -238,6 +346,23 @@ fn hex(bytes: &[u8]) -> String {
         s.push_str(&format!("{b:02x}"));
     }
     s
+}
+
+fn open_sqlite(db_path: &str, db_key: &[u8], cfg: &Tunables) -> Option<SqliteStore> {
+    if db_key.len() != 32 {
+        return None;
+    }
+    let mut key = [0u8; 32];
+    key.copy_from_slice(db_key);
+    SqliteStore::open(
+        db_path,
+        &key,
+        cfg.channel_history_max_msgs,
+        cfg.channel_history_ms,
+        cfg.envelope_ttl_ms,
+        cfg.envelope_max_per_peer,
+    )
+    .ok()
 }
 
 fn decode_hex32(s: &str) -> Option<[u8; 32]> {

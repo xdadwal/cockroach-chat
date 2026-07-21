@@ -17,4 +17,5 @@ path = "src/bin/uniffi-bindgen.rs"
 
 [dependencies]
 meshcore = { path = "../meshcore" }
+meshcore-store = { path = "../meshcore-store" }
 uniffi = { version = "0.28", features = ["cli"] }
