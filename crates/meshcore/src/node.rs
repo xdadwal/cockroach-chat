@@ -520,15 +520,21 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             Err(_) => return,
         };
 
-        // Rate-limit by originating identity (relayed copies keep the origin's eph).
-        if !self.rate.allow(pkt.sender, now) {
-            return;
-        }
-
+        // Dedup FIRST: a message that arrives many times (relayed copies, or several redundant
+        // links to the same peer) must be counted once. observe() still bumps the suppression
+        // counter for every copy.
         let digest = pkt.digest();
         let obs = self.seen.observe(digest, now);
         if !obs.is_new {
-            return; // duplicate: the observe() bumped the suppression counter, nothing else to do
+            return; // duplicate — already processed
+        }
+
+        // Rate-limit *distinct* messages by originating identity. Doing this after dedup means
+        // duplicates are free, so redundant links can't falsely greylist a well-behaved peer (the
+        // bug that silently killed the DM handshake); a genuine flooder still sends distinct
+        // messages and is throttled.
+        if !self.rate.allow(pkt.sender, now) {
+            return;
         }
 
         // Remember which eph is reachable on this link.

@@ -239,6 +239,26 @@ pub fn direct_message(seed: u64) -> DmResult {
     }
 }
 
+/// A DM between two phones joined by SEVERAL redundant BLE links — the real two-phone setup, where
+/// both sides advertise + scan + connect and end up with ~5 links to one peer. Regression guard:
+/// duplicate copies of a message across those links must not falsely greylist the peer and kill the
+/// Noise handshake (which delivers no message until it completes).
+pub fn dm_over_redundant_links(seed: u64) -> bool {
+    let mut world = World::new(2, crowd_cfg(), seed);
+    for _ in 0..5 {
+        world.link(0, 1, LINK_LATENCY_MS, 0.0, MTU);
+    }
+    world.bootstrap();
+    world.run_for(3000);
+    let b_fp = world.node_fingerprint(1);
+    world.node_mut(0).send_dm(b_fp, "north gate clear");
+    world.run_for(5000);
+    world
+        .events(1)
+        .iter()
+        .any(|e| matches!(e, MeshEvent::DmReceived { text, .. } if text == "north gate clear"))
+}
+
 pub struct FloodResult {
     pub honest_delivered: bool,
     pub attacker_greylisted_effect: bool,

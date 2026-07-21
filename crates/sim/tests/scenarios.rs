@@ -81,6 +81,17 @@ fn encrypted_dm_relays_and_eavesdropper_is_blind() {
 }
 
 #[test]
+fn dm_survives_redundant_links() {
+    // The regression that broke DMs on real phones: ~5 links to one peer falsely greylisted it.
+    for seed in [1, 2, 3, 7] {
+        assert!(
+            scenarios::dm_over_redundant_links(seed),
+            "DM failed over redundant links (seed {seed}) — duplicate copies greylisted the peer"
+        );
+    }
+}
+
+#[test]
 fn malicious_flooder_is_contained() {
     let r = scenarios::malicious_flooder(11);
     assert!(r.honest_delivered, "honest message lost during flood");
