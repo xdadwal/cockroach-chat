@@ -81,6 +81,21 @@ fn encrypted_dm_relays_and_eavesdropper_is_blind() {
 }
 
 #[test]
+fn store_and_forward_delivers_when_peer_returns() {
+    for seed in [1, 2, 3] {
+        let r = scenarios::store_and_forward(seed);
+        assert!(
+            r.not_before,
+            "DM leaked before the peer was reachable (seed {seed})"
+        );
+        assert!(
+            r.delivered_after,
+            "held DM was not delivered after the peer came online (seed {seed})"
+        );
+    }
+}
+
+#[test]
 fn redundant_links_collapse_to_one() {
     for seed in [1, 2, 3] {
         let r = scenarios::link_dedup(seed);
@@ -89,7 +104,10 @@ fn redundant_links_collapse_to_one() {
             "5 links to one peer should dedup to 1 (seed {seed}), got {}",
             r.links_after
         );
-        assert!(r.delivered, "messaging must still work after dedup (seed {seed})");
+        assert!(
+            r.delivered,
+            "messaging must still work after dedup (seed {seed})"
+        );
     }
 }
 

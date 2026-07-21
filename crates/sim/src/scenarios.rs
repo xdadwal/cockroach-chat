@@ -275,11 +275,48 @@ pub fn link_dedup(seed: u64) -> DedupResult {
     world.run_for(3000); // announces flow; redundant links get closed
 
     let links_after = world.link_count(0);
-    let digest = world.node_mut(0).send_channel_message("#general", "still works");
+    let digest = world
+        .node_mut(0)
+        .send_channel_message("#general", "still works");
     world.run_for(1500);
     DedupResult {
         links_after,
         delivered: world.count_with_message(&digest) == 2,
+    }
+}
+
+pub struct SafResult {
+    /// The message was NOT delivered while B was offline.
+    pub not_before: bool,
+    /// The held message was delivered once B came online.
+    pub delivered_after: bool,
+}
+
+/// Store-and-forward: A sends B a DM while B is unreachable (no link). It's held in the encrypted
+/// store, then delivered when B comes online.
+pub fn store_and_forward(seed: u64) -> SafResult {
+    let mut world = World::new(2, crowd_cfg(), seed);
+    let b_fp = world.node_fingerprint(1);
+
+    // B is offline (A has never seen it) — the DM is held, not sent.
+    world.node_mut(0).send_dm(b_fp, "held for you");
+    world.run_for(1000);
+    let not_before = !world
+        .events(1)
+        .iter()
+        .any(|e| matches!(e, MeshEvent::DmReceived { .. }));
+
+    // B comes online — the held message should now be delivered.
+    world.connect(0, 1, LINK_LATENCY_MS, 0.0, MTU);
+    world.run_for(5000);
+    let delivered_after = world
+        .events(1)
+        .iter()
+        .any(|e| matches!(e, MeshEvent::DmReceived { text, .. } if text == "held for you"));
+
+    SafResult {
+        not_before,
+        delivered_after,
     }
 }
 

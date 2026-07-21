@@ -33,10 +33,13 @@ mark such items and note it.
   GATT connection + a 30 s reconnect cooldown (anti-thrash). Sim: `redundant_links_collapse_to_one`
   (5 links → 1, delivery still works); multi-hop/broadcast/partition unaffected. `cargo test
   --workspace` green (54 unit + 9 scenarios), APK builds. Addresses PERFORMANCE.md #1.
-- [ ] **2. Store-and-forward** — wire the encrypted envelope store into the DM path: a DM to a peer
-  not currently reachable is queued (`queue_envelope`), and drained (`take_envelopes`) + delivered
-  when that peer reappears (announce / link-up). Sim scenario: A DMs B while B is offline; B comes
-  online later and receives it.
+- [x] **2. Store-and-forward** — DONE. `send_dm` to a peer we can't currently reach (no
+  `fp_to_eph` entry) holds the message as an encrypted envelope (`queue_envelope`) instead of
+  dropping it; `handle_announce` drains held envelopes (`take_envelopes`) and delivers them when the
+  peer reappears. Core-only (the FFI `send_dm` routes through it transparently); no rebuild. Sim:
+  `store_and_forward_delivers_when_peer_returns` (held while offline, delivered on reconnect). Note:
+  the DM UI still only exposes peers already discovered — DM-by-scanned-fingerprint (even offline)
+  ties into item 3 (QR).
 - [ ] **3. QR verification + petnames** — in-person QR fingerprint exchange to promote a peer from
   unverified → verified, with a user-chosen petname persisted in the store. Core: verification state
   + petname API; Android: show/scan QR, petname UI. Sim/unit-test the core; compile the UI.

@@ -182,6 +182,35 @@ impl World {
         id
     }
 
+    /// Add a link and bring it up immediately (for scenarios that connect peers *after* bootstrap,
+    /// e.g. a peer coming online later).
+    pub fn connect(
+        &mut self,
+        a: usize,
+        b: usize,
+        latency_ms: u64,
+        loss: f64,
+        mtu: usize,
+    ) -> LinkId {
+        let id = self.link(a, b, latency_ms, loss, mtu);
+        self.nodes[a]
+            .node
+            .on_transport_event(TransportEvent::LinkUp {
+                link: id,
+                mtu,
+                peer_hint: None,
+            });
+        self.nodes[b]
+            .node
+            .on_transport_event(TransportEvent::LinkUp {
+                link: id,
+                mtu,
+                peer_hint: None,
+            });
+        self.collect_and_route();
+        id
+    }
+
     /// Bring every current edge up at both endpoints (drives the initial announces/syncs).
     pub fn bootstrap(&mut self) {
         let edges = self.edges.clone();

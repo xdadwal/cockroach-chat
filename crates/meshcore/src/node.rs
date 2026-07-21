@@ -248,14 +248,23 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             .unwrap_or(false);
         if ready {
             self.encrypt_and_send_dm(peer_fp, text);
-        } else {
-            self.pending_dms
-                .entry(peer_fp)
-                .or_default()
-                .push(text.to_string());
-            if !self.noise_sessions.contains_key(&peer_fp) {
-                self.begin_handshake(peer_fp);
-            }
+            return;
+        }
+        // If we don't currently know where this peer is (no announce seen / they've gone), hold the
+        // message in the encrypted store and deliver it when they reappear (store-and-forward).
+        if !self.fp_to_eph.contains_key(&peer_fp) {
+            let now = self.clock.now_ms();
+            self.store
+                .queue_envelope(peer_fp, text.as_bytes().to_vec(), now);
+            return;
+        }
+        // Peer is reachable: queue the message during the handshake and kick it off.
+        self.pending_dms
+            .entry(peer_fp)
+            .or_default()
+            .push(text.to_string());
+        if !self.noise_sessions.contains_key(&peer_fp) {
+            self.begin_handshake(peer_fp);
         }
     }
 
@@ -649,6 +658,13 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         });
         // A newly-learned key may let us resolve (and dedup) links we couldn't identify yet.
         self.dedup_links();
+
+        // Deliver any store-and-forward messages that were held while this peer was unreachable.
+        let held = self.store.take_envelopes(&fingerprint);
+        for bytes in held {
+            let text = String::from_utf8_lossy(&bytes).to_string();
+            self.send_dm(fingerprint, &text);
+        }
     }
 
     fn handle_channel(&mut self, pkt: &Packet) {
