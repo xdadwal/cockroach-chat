@@ -16,6 +16,7 @@ pub mod error;
 pub mod frag;
 pub mod identity;
 pub mod node;
+pub mod noise;
 pub mod relay;
 pub mod store;
 pub mod transport;

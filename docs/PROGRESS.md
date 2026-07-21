@@ -78,7 +78,17 @@ no Bluetooth).
 Remaining M1 (SQLCipher store, iOS overflow-area filter) unchanged. See `docs/IMPLEMENTATION_PLAN.md` §M1.
 
 ## M2 — Relay live (multi-hop, store-and-forward) — *hardware-gated*  · see §M2
-## M3 — Noise XX DMs + QR verification (`noise.rs` is core-testable) · see §M3
+## M3 — Noise XX encrypted DMs
+Core **built and simulator-verified**; UI + QR verification remain.
+- [x] `noise.rs`: Noise XX session (snow) — handshake, transport encrypt/decrypt, identity binding via `remote_static()`. 5 unit tests (bidirectional messages, third-party-can't-decrypt, tampered-ciphertext-rejected, identity binding).
+- [x] DM integration in `node.rs`: `send_dm(fingerprint)`, handshake auto-init + drive, `DirectMessage`/`NoiseHandshake` handling, announce carries X25519 key, **MITM-binding** (Noise remote static must equal announced X25519 key), inbound-DM buffering (handles a DM overtaking the final handshake message over a relay). Events: `DmReceived`, `DmSession`.
+- [x] Simulator scenario `encrypted_dm_relays_and_eavesdropper_is_blind`: A→B DM relays through a middle node that forwards but **cannot decrypt**; delivered + verified.
+- [x] FFI: `send_dm(peer_fp_hex, text)` + `FfiEvent::DirectMessage`/`DmSession`.
+- [ ] DM UI on phones (tap a peer → encrypted DM thread); demoable on the two-phone rig.
+- [ ] QR in-person verification + petnames; verified/unverified/unauthenticated UI states.
+- [ ] Per-message ratchet with a skipped-key window (current: snow transport — forward-secure per session, but multiple DMs must arrive in order; out-of-order needs the ratchet). Persist sessions encrypted.
+
+See §M3 in `docs/IMPLEMENTATION_PLAN.md`.
 ## M4 — Media (voice notes + images, offer-and-fetch) · see §M4
 ## M5 — iOS shell · see §M5
 ## M6 — Hardening · see §M6

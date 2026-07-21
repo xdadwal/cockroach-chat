@@ -10,6 +10,7 @@ use crate::compress;
 use crate::config::Tunables;
 use crate::frag::{self, Reassembler};
 use crate::identity::{Fingerprint, LocalIdentity};
+use crate::noise::NoiseSession;
 use crate::relay::{self, RateLimiter, RelayScheduler, SeenCache};
 use crate::store::{PeerRecord, Store, StoredMessage};
 use crate::transport::{LinkId, Transport, TransportEvent};
@@ -38,6 +39,20 @@ pub enum MeshEvent {
         fingerprint: Fingerprint,
         eph: EphId,
         petname: Option<String>,
+    },
+    /// An end-to-end encrypted direct message was decrypted for us. `verified` is always true
+    /// here — a DM only reaches this point after a mutually-authenticated Noise session whose
+    /// remote static key matched the sender's announced identity.
+    DmReceived {
+        sender_fp: Fingerprint,
+        from_eph: EphId,
+        text: String,
+    },
+    /// A Noise session with a peer became ready (or was rejected). `verified` distinguishes an
+    /// identity-bound session from a rejected/mismatched one.
+    DmSession {
+        peer_fp: Fingerprint,
+        verified: bool,
     },
     /// A link dropped.
     PeerLost { link: LinkId },
@@ -73,6 +88,19 @@ pub struct MeshNode<T: Transport, C: Clock, S: Store> {
     events: Vec<MeshEvent>,
     nickname: String,
     relays_fired: u64,
+
+    // --- direct messaging (M3) ---
+    /// Per-peer Noise sessions, keyed by the peer's stable fingerprint.
+    noise_sessions: HashMap<Fingerprint, NoiseSession>,
+    /// DMs queued while a session is still being established.
+    pending_dms: HashMap<Fingerprint, Vec<String>>,
+    /// The peer's current ephemeral wire id (for addressing directed packets).
+    fp_to_eph: HashMap<Fingerprint, EphId>,
+    /// The peer's announced X25519 static key, used to bind the Noise session to its identity.
+    peer_static_dh: HashMap<Fingerprint, [u8; 32]>,
+    /// Ciphertexts that arrived before the session was ready (a DM can overtake the final
+    /// handshake message over a relay); drained when the session completes.
+    pending_inbound_dms: HashMap<Fingerprint, Vec<Vec<u8>>>,
 }
 
 impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
@@ -104,6 +132,11 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             events: Vec::new(),
             nickname: nickname.into(),
             relays_fired: 0,
+            noise_sessions: HashMap::new(),
+            pending_dms: HashMap::new(),
+            fp_to_eph: HashMap::new(),
+            peer_static_dh: HashMap::new(),
+            pending_inbound_dms: HashMap::new(),
         }
     }
 
@@ -184,7 +217,11 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
     /// Send our signed announce on every link (peers learn our eph → key binding from it).
     pub fn announce(&mut self) {
         let now = self.clock.now_ms();
-        let payload = encode_announce(self.identity.verifying_key().as_bytes(), &self.nickname);
+        let payload = encode_announce(
+            self.identity.verifying_key().as_bytes(),
+            self.identity.dh_public().as_bytes(),
+            &self.nickname,
+        );
         let mut pkt = Packet::new(
             MsgType::Announce,
             self.cfg.origin_ttl(self.links.len()),
@@ -198,10 +235,229 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         self.broadcast(&pkt, None);
     }
 
+    /// Send an end-to-end encrypted direct message to a peer (by fingerprint). On first use this
+    /// establishes a Noise session, queuing the message until the handshake completes.
+    pub fn send_dm(&mut self, peer_fp: Fingerprint, text: &str) {
+        let ready = self
+            .noise_sessions
+            .get(&peer_fp)
+            .map(|s| s.is_ready())
+            .unwrap_or(false);
+        if ready {
+            self.encrypt_and_send_dm(peer_fp, text);
+        } else {
+            self.pending_dms
+                .entry(peer_fp)
+                .or_default()
+                .push(text.to_string());
+            if !self.noise_sessions.contains_key(&peer_fp) {
+                self.begin_handshake(peer_fp);
+            }
+        }
+    }
+
     pub fn panic_wipe(&mut self) {
         self.store.panic_wipe();
         self.eph_keys.clear();
+        self.noise_sessions.clear();
+        self.pending_dms.clear();
+        self.fp_to_eph.clear();
+        self.peer_static_dh.clear();
+        self.pending_inbound_dms.clear();
         self.events.clear();
+    }
+
+    // --- direct-message internals ---
+
+    fn eph_to_fp(&self, eph: EphId) -> Option<Fingerprint> {
+        self.eph_keys.get(&eph).map(|pk| Sha256::digest(pk).into())
+    }
+
+    fn begin_handshake(&mut self, peer_fp: Fingerprint) {
+        let priv_bytes = self.identity.dh_private_bytes();
+        let mut session = match NoiseSession::new_initiator(&priv_bytes) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let msg = match session.write_handshake() {
+            Ok(m) => m,
+            Err(_) => return,
+        };
+        self.noise_sessions.insert(peer_fp, session);
+        self.send_directed(MsgType::NoiseHandshake, peer_fp, msg);
+    }
+
+    fn handle_noise_handshake(&mut self, pkt: &Packet) {
+        if pkt.recipient != Some(self.identity.eph_id()) {
+            return; // not addressed to us; relaying is handled separately
+        }
+        let Some(fp) = self.eph_to_fp(pkt.sender) else {
+            return; // we haven't learned this peer's identity yet
+        };
+        if self
+            .noise_sessions
+            .get(&fp)
+            .map(|s| s.is_ready())
+            .unwrap_or(false)
+        {
+            return; // already established; ignore a stray/late handshake
+        }
+        // Responder path: create the session on the first handshake packet.
+        if !self.noise_sessions.contains_key(&fp) {
+            let priv_bytes = self.identity.dh_private_bytes();
+            match NoiseSession::new_responder(&priv_bytes) {
+                Ok(s) => {
+                    self.noise_sessions.insert(fp, s);
+                }
+                Err(_) => return,
+            }
+        }
+        {
+            let session = self.noise_sessions.get_mut(&fp).unwrap();
+            if session.read_handshake(&pkt.payload).is_err() {
+                self.noise_sessions.remove(&fp);
+                return;
+            }
+        }
+        self.advance_handshake(fp);
+    }
+
+    fn advance_handshake(&mut self, fp: Fingerprint) {
+        let outbound = {
+            let session = self.noise_sessions.get_mut(&fp).unwrap();
+            if session.is_ready() {
+                None
+            } else {
+                match session.write_handshake() {
+                    Ok(m) => Some(m),
+                    Err(_) => {
+                        self.noise_sessions.remove(&fp);
+                        return;
+                    }
+                }
+            }
+        };
+        if let Some(msg) = outbound {
+            self.send_directed(MsgType::NoiseHandshake, fp, msg);
+        }
+        if self
+            .noise_sessions
+            .get(&fp)
+            .map(|s| s.is_ready())
+            .unwrap_or(false)
+        {
+            self.finish_session(fp);
+        }
+    }
+
+    fn finish_session(&mut self, fp: Fingerprint) {
+        // Bind the encrypted channel to the peer's signed identity: the Noise remote static must
+        // equal the X25519 key the peer announced. Otherwise it is a MITM — drop everything.
+        let bound = match (
+            self.noise_sessions.get(&fp).and_then(|s| s.remote_static()),
+            self.peer_static_dh.get(&fp),
+        ) {
+            (Some(remote), Some(known)) => &remote == known,
+            _ => false,
+        };
+        if !bound {
+            self.noise_sessions.remove(&fp);
+            self.pending_dms.remove(&fp);
+            self.events.push(MeshEvent::DmSession {
+                peer_fp: fp,
+                verified: false,
+            });
+            return;
+        }
+        self.events.push(MeshEvent::DmSession {
+            peer_fp: fp,
+            verified: true,
+        });
+        // Drain outbound DMs queued during the handshake.
+        let pending = self.pending_dms.remove(&fp).unwrap_or_default();
+        for text in pending {
+            self.encrypt_and_send_dm(fp, &text);
+        }
+        // Drain inbound DMs that overtook the final handshake message.
+        let inbound = self.pending_inbound_dms.remove(&fp).unwrap_or_default();
+        for ct in inbound {
+            self.decrypt_and_emit(fp, &ct);
+        }
+    }
+
+    fn encrypt_and_send_dm(&mut self, fp: Fingerprint, text: &str) {
+        let ciphertext = {
+            let Some(session) = self.noise_sessions.get_mut(&fp) else {
+                return;
+            };
+            match session.encrypt(text.as_bytes()) {
+                Ok(c) => c,
+                Err(_) => return,
+            }
+        };
+        self.send_directed(MsgType::DirectMessage, fp, ciphertext);
+    }
+
+    fn handle_direct_message(&mut self, pkt: &Packet) {
+        if pkt.recipient != Some(self.identity.eph_id()) {
+            return;
+        }
+        let Some(fp) = self.eph_to_fp(pkt.sender) else {
+            return;
+        };
+        let ready = self
+            .noise_sessions
+            .get(&fp)
+            .map(|s| s.is_ready())
+            .unwrap_or(false);
+        if !ready {
+            // The DM overtook the final handshake message; hold it until the session is ready.
+            let buf = self.pending_inbound_dms.entry(fp).or_default();
+            if buf.len() < 32 {
+                buf.push(pkt.payload.clone());
+            }
+            return;
+        }
+        self.decrypt_and_emit(fp, &pkt.payload);
+    }
+
+    fn decrypt_and_emit(&mut self, fp: Fingerprint, ciphertext: &[u8]) {
+        let plaintext = {
+            let Some(session) = self.noise_sessions.get_mut(&fp) else {
+                return;
+            };
+            match session.decrypt(ciphertext) {
+                Ok(p) => p,
+                Err(_) => return,
+            }
+        };
+        let from_eph = self.fp_to_eph.get(&fp).copied().unwrap_or([0u8; 8]);
+        let text = String::from_utf8_lossy(&plaintext).to_string();
+        self.events.push(MeshEvent::DmReceived {
+            sender_fp: fp,
+            from_eph,
+            text,
+        });
+    }
+
+    /// Build, sign, and flood a directed packet (DM or handshake) toward `peer_fp`'s current eph.
+    fn send_directed(&mut self, msg_type: MsgType, peer_fp: Fingerprint, payload: Vec<u8>) {
+        let Some(&recipient) = self.fp_to_eph.get(&peer_fp) else {
+            return; // we don't know where this peer is right now
+        };
+        let now = self.clock.now_ms();
+        let ttl = self.cfg.origin_ttl(self.links.len());
+        let mut pkt = Packet::new(
+            msg_type,
+            ttl,
+            now,
+            self.identity.eph_id(),
+            Some(recipient),
+            payload,
+        );
+        pkt.sign(self.identity.signing_key());
+        self.seen.observe(pkt.digest(), now);
+        self.broadcast(&pkt, None);
     }
 
     // --- transport plumbing ---
@@ -284,6 +540,8 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             MsgType::Announce => self.handle_announce(&pkt),
             MsgType::ChannelMessage => self.handle_channel(&pkt),
             MsgType::SyncRequest => self.handle_sync_request(link, &pkt),
+            MsgType::NoiseHandshake => self.handle_noise_handshake(&pkt),
+            MsgType::DirectMessage => self.handle_direct_message(&pkt),
             _ => {} // unknown/other: relayed below, not parsed
         }
 
@@ -305,7 +563,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
     }
 
     fn handle_announce(&mut self, pkt: &Packet) {
-        let Some((pubkey, nick)) = decode_announce(&pkt.payload) else {
+        let Some((pubkey, dh_pub, nick)) = decode_announce(&pkt.payload) else {
             return;
         };
         let Ok(vk) = VerifyingKey::from_bytes(&pubkey) else {
@@ -316,6 +574,8 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         }
         self.eph_keys.insert(pkt.sender, pubkey);
         let fingerprint: Fingerprint = Sha256::digest(pubkey).into();
+        self.fp_to_eph.insert(fingerprint, pkt.sender);
+        self.peer_static_dh.insert(fingerprint, dh_pub);
         let petname = self.store.get_peer(&fingerprint).and_then(|p| p.petname);
         self.store.upsert_peer(PeerRecord {
             fingerprint,
@@ -448,28 +708,33 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
 
 // --- payload (de)serialization helpers -------------------------------------------------
 
-fn encode_announce(pubkey: &[u8; 32], nick: &str) -> Vec<u8> {
+/// Announce payload: `ed25519_pub(32) ‖ x25519_pub(32) ‖ nick_len(1) ‖ nick`. The X25519 key lets
+/// peers bind a future Noise session to this signed identity.
+fn encode_announce(ed_pub: &[u8; 32], dh_pub: &[u8; 32], nick: &str) -> Vec<u8> {
     let nick_bytes = nick.as_bytes();
     let n = nick_bytes.len().min(24);
-    let mut out = Vec::with_capacity(33 + n);
-    out.extend_from_slice(pubkey);
+    let mut out = Vec::with_capacity(65 + n);
+    out.extend_from_slice(ed_pub);
+    out.extend_from_slice(dh_pub);
     out.push(n as u8);
     out.extend_from_slice(&nick_bytes[..n]);
     out
 }
 
-fn decode_announce(payload: &[u8]) -> Option<([u8; 32], String)> {
-    if payload.len() < 33 {
+fn decode_announce(payload: &[u8]) -> Option<([u8; 32], [u8; 32], String)> {
+    if payload.len() < 65 {
         return None;
     }
-    let mut pk = [0u8; 32];
-    pk.copy_from_slice(&payload[..32]);
-    let n = payload[32] as usize;
-    if 33 + n > payload.len() {
+    let mut ed = [0u8; 32];
+    ed.copy_from_slice(&payload[..32]);
+    let mut dh = [0u8; 32];
+    dh.copy_from_slice(&payload[32..64]);
+    let n = payload[64] as usize;
+    if 65 + n > payload.len() {
         return None;
     }
-    let nick = String::from_utf8_lossy(&payload[33..33 + n]).to_string();
-    Some((pk, nick))
+    let nick = String::from_utf8_lossy(&payload[65..65 + n]).to_string();
+    Some((ed, dh, nick))
 }
 
 /// Channel payload: `[flag_compressed(1)][chan_len(1)][chan][text...]`, text optionally LZ4'd.

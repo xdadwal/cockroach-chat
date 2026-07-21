@@ -68,10 +68,10 @@ relayed but not parsed.
 
 | Value | Type | Payload |
 |-------|------|---------|
-| 0x01 | Announce | `ed25519_pub(32) ‖ nick_len(1) ‖ nick(≤24)` (M0). TLV form is a later extension. |
+| 0x01 | Announce | `ed25519_pub(32) ‖ x25519_pub(32) ‖ nick_len(1) ‖ nick(≤24)`. The X25519 key binds a future Noise session to this signed identity. TLV form is a later extension. |
 | 0x02 | ChannelMessage | `compressed(1) ‖ chan_len(1) ‖ channel ‖ body` (body LZ4 iff `compressed=1`) |
-| 0x03 | DirectMessage | Noise ciphertext (M3) |
-| 0x04 | NoiseHandshake | Noise XX handshake message (M3) |
+| 0x03 | DirectMessage | Noise transport ciphertext (directed; recipient set). Flood-relayed; only the recipient can decrypt. |
+| 0x04 | NoiseHandshake | Noise XX handshake message (directed). Three-message XX; the recipient's Noise static is bound to its announced X25519 key to reject MITM. |
 | 0x05 | Receipt | delivery/read receipt |
 | 0x06 | SyncRequest | `chan_len(1) ‖ channel ‖ digest(8)*` — digests the requester holds |
 | 0x07 | SyncResponse | reserved (M0 answers a SyncRequest by resending original ChannelMessage packets) |

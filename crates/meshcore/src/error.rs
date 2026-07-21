@@ -23,6 +23,9 @@ pub enum Error {
 
     #[error("store: {0}")]
     Store(String),
+
+    #[error("noise: {0}")]
+    Noise(String),
 }
 
 /// Errors from decoding untrusted bytes off the wire. These must never panic — they are the

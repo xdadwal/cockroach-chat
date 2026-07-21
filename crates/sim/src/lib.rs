@@ -247,6 +247,11 @@ impl World {
         &mut self.nodes[i].node
     }
 
+    /// A node's stable identity fingerprint (used to address DMs).
+    pub fn node_fingerprint(&self, i: usize) -> [u8; 32] {
+        self.nodes[i].node.fingerprint()
+    }
+
     /// Fraction of nodes whose store holds `digest`.
     pub fn delivery_ratio(&self, digest: &[u8; 8]) -> f64 {
         let have = self

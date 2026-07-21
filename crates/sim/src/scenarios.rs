@@ -199,6 +199,46 @@ pub fn duplicate_storm(seed: u64) -> StormResult {
     }
 }
 
+pub struct DmResult {
+    /// The recipient decrypted the DM.
+    pub delivered: bool,
+    /// The plaintext matched.
+    pub text_ok: bool,
+    /// The relaying middle node never decrypted it.
+    pub eavesdropper_blind: bool,
+}
+
+/// Line A — Eve — B (A and B out of direct range). A sends an encrypted DM to B; the Noise
+/// handshake and ciphertext must relay through Eve, who forwards but cannot read them.
+pub fn direct_message(seed: u64) -> DmResult {
+    let mut world = World::new(3, crowd_cfg(), seed);
+    world.link(0, 1, LINK_LATENCY_MS, 0.0, MTU);
+    world.link(1, 2, LINK_LATENCY_MS, 0.0, MTU);
+    world.bootstrap();
+    world.run_for(2500); // let announces (with X25519 keys) propagate end-to-end
+
+    let b_fp = world.node_fingerprint(2);
+    world.node_mut(0).send_dm(b_fp, "meet at the safehouse");
+    world.run_for(5000); // XX handshake (3 messages) relays A<->B, then the DM
+
+    let received = |i: usize| -> Vec<String> {
+        world
+            .events(i)
+            .iter()
+            .filter_map(|e| match e {
+                MeshEvent::DmReceived { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    let b_msgs = received(2);
+    DmResult {
+        delivered: !b_msgs.is_empty(),
+        text_ok: b_msgs.iter().any(|t| t == "meet at the safehouse"),
+        eavesdropper_blind: received(1).is_empty(),
+    }
+}
+
 pub struct FloodResult {
     pub honest_delivered: bool,
     pub attacker_greylisted_effect: bool,

@@ -68,6 +68,11 @@ impl LocalIdentity {
         XPublic::from(&self.dh_secret)
     }
 
+    /// The raw X25519 private scalar, for seeding a Noise static keypair. Handle with care.
+    pub fn dh_private_bytes(&self) -> [u8; 32] {
+        self.dh_secret.to_bytes()
+    }
+
     pub fn eph_id(&self) -> EphId {
         self.eph_id
     }

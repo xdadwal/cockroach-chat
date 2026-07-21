@@ -65,6 +65,16 @@ pub enum FfiEvent {
     PeerLost {
         link: u64,
     },
+    /// A decrypted end-to-end encrypted direct message (`sender` is the peer's fingerprint hex).
+    DirectMessage {
+        sender: String,
+        text: String,
+    },
+    /// A Noise session with a peer completed (`verified` false means identity binding failed).
+    DmSession {
+        peer: String,
+        verified: bool,
+    },
 }
 
 /// The FFI handle to a running mesh node.
@@ -124,6 +134,14 @@ impl FfiMeshNode {
             .lock()
             .unwrap()
             .send_channel_message(&channel, &text))
+    }
+
+    /// Send an end-to-end encrypted direct message to a peer, addressed by fingerprint hex (as
+    /// delivered in `FfiEvent::PeerAppeared`). A no-op if the fingerprint is malformed.
+    pub fn send_dm(&self, peer_fingerprint: String, text: String) {
+        if let Some(fp) = decode_hex32(&peer_fingerprint) {
+            self.inner.lock().unwrap().send_dm(fp, &text);
+        }
     }
 
     /// Report a new link (BLE connection or stand-in) with its usable MTU.
@@ -200,6 +218,16 @@ fn to_ffi(e: MeshEvent) -> Option<FfiEvent> {
             petname,
         }),
         MeshEvent::PeerLost { link } => Some(FfiEvent::PeerLost { link }),
+        MeshEvent::DmReceived {
+            sender_fp, text, ..
+        } => Some(FfiEvent::DirectMessage {
+            sender: hex(&sender_fp),
+            text,
+        }),
+        MeshEvent::DmSession { peer_fp, verified } => Some(FfiEvent::DmSession {
+            peer: hex(&peer_fp),
+            verified,
+        }),
         MeshEvent::Stats { .. } => None,
     }
 }
@@ -210,4 +238,15 @@ fn hex(bytes: &[u8]) -> String {
         s.push_str(&format!("{b:02x}"));
     }
     s
+}
+
+fn decode_hex32(s: &str) -> Option<[u8; 32]> {
+    if s.len() != 64 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(out)
 }
