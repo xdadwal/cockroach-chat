@@ -34,3 +34,15 @@ Cargo.lock.orig
 .claude/settings.local.json
 .claude/*.local.md
 .claude/ralph-loop.local.md
+
+# Android
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/jniLibs/
+android/app/src/main/java/uniffi/
+.gradle/
+
+# Gradle wrapper jar must be committed (overrides *.jar above)
+!**/gradle/wrapper/gradle-wrapper.jar

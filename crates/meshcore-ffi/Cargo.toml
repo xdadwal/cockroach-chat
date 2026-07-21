@@ -1,0 +1,20 @@
+[package]
+name = "meshcore-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "UniFFI bindings exposing meshcore to Android (Kotlin) and iOS (Swift)."
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+name = "meshcore_ffi"
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+meshcore = { path = "../meshcore" }
+uniffi = { version = "0.28", features = ["cli"] }

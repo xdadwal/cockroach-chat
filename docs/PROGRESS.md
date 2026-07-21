@@ -62,12 +62,18 @@ Verify everything: `cargo test --workspace && cargo run -p sim -- --nodes 200 --
 
 ---
 
-## M1 — Android BLE glue: two phones chat offline — *hardware-gated*
-First tasks (do the JVM smoke test + UniFFI plumbing here, since that's their natural home):
-Gradle + rust-android-gradle wiring → `uniffi-bindgen` task → **JVM smoke test** → runtime
-permissions → `MeshForegroundService` (`connectedDevice`) → GATT dual role → status-133
-discipline → announce handshake → minimal Compose UI. See `docs/IMPLEMENTATION_PLAN.md` §M1.
-On-device steps cannot be verified by an autonomous loop — hand those to the human.
+## M1 — Android BLE glue: two phones chat offline
+The **toolchain and app are done and verified on the emulator** (the plumbing that the plan
+called the "M1 choke point"). Only the literal BLE radio remains hardware-gated (emulators have
+no Bluetooth).
+- [x] `meshcore-ffi` UniFFI crate: concrete `FfiMeshNode` + `BleTransport`/`FfiEvent`. Compiles; Kotlin bindings generate.
+- [x] Cross-compile to `arm64-v8a` via NDK 28 (`scripts/build-android-lib.sh`, env-var linker — no cargo-ndk needed).
+- [x] Android Gradle app (AGP 8.5, Kotlin 1.9.24, Compose): builds a debug APK bundling the `.so` + JNA + bindings.
+- [x] **Runs on the emulator**: two real `MeshNode`s exchange signed announces (peer discovery), and a channel message crosses from Ava → Ben **signature-verified** — the entire core runs on-device through UniFFI. (Loopback transport stands in for BLE.)
+- [!] **Real BLE GATT dual-role transport** (`BleMeshTransport` + `MeshForegroundService`): compiles, but **cannot be verified without physical phones** (no BLE in emulator). This is the one genuinely hardware-gated piece. Structure: one service UUID, RX write / TX notify, filtered scan + RSSI gate, status-133 close+retry, `connectedDevice` foreground service, runtime permissions.
+- [ ] On two physical phones (one cheap OEM), airplane mode: discover, connect, chat both ways; reconnect after app kill.
+
+Remaining M1 (SQLCipher store, iOS overflow-area filter) unchanged. See `docs/IMPLEMENTATION_PLAN.md` §M1.
 
 ## M2 — Relay live (multi-hop, store-and-forward) — *hardware-gated*  · see §M2
 ## M3 — Noise XX DMs + QR verification (`noise.rs` is core-testable) · see §M3

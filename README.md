@@ -36,6 +36,23 @@ It does **not** claim city-scale realtime chat — BLE physics doesn't allow it.
 | `docs/threat-model.md` | What's defended and what isn't (written at M6). |
 | `PROMPT.md` | Standing prompt for autonomous (Ralph-loop) iterative builds. |
 
+## Android app
+
+A working Android app runs the Rust core through UniFFI. On the emulator (which has no Bluetooth
+radio) it uses an in-app **loopback** transport to demonstrate two real mesh nodes chatting —
+signing, relaying, and **signature-verifying** each message through the actual core. The real BLE
+GATT dual-role transport (`app/.../ble/`) compiles and is a drop-in replacement for hardware.
+
+```bash
+# 1. Cross-compile the Rust core to arm64-v8a and generate Kotlin bindings
+ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/<version> ./scripts/build-android-lib.sh
+# 2. Build + install the app (JAVA_HOME must point at a JDK 17+; e.g. Android Studio's JBR)
+cd android && ./gradlew installDebug
+```
+
+Requires: Rust stable + `aarch64-linux-android` target, Android SDK + NDK. The `.so`, JNA, and
+generated bindings are packaged into the APK automatically.
+
 ## Building with the Ralph loop
 
 This repo is structured for iterative autonomous development. To drive the build:

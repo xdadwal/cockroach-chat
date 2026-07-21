@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose draws the real UI; this only styles the window before first frame. -->
+    <style name="Theme.CockroachChat" parent="android:Theme.Material.NoActionBar" />
+</resources>
