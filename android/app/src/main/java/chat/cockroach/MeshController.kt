@@ -86,6 +86,7 @@ class MeshController(private val scope: CoroutineScope) {
                     is FfiEvent.PeerAppeared ->
                         status.add("${names[i]} sees peer ${ev.petname ?: ev.eph.take(8)}")
                     is FfiEvent.PeerLost -> status.add("${names[i]} lost a link")
+                    else -> {} // DMs aren't exercised in the loopback demo
                 }
             }
         }

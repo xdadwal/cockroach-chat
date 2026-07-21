@@ -3,7 +3,9 @@ package chat.cockroach
 import android.content.Context
 import android.os.Build
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import chat.cockroach.ble.BleMeshTransport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -12,17 +14,24 @@ import kotlinx.coroutines.launch
 import uniffi.meshcore_ffi.FfiEvent
 import uniffi.meshcore_ffi.FfiMeshNode
 
+data class Peer(val fp: String, val name: String, val verified: Boolean)
+
 /**
- * Drives the REAL BLE transport on-device. With one phone this validates the stack starts
- * (advertising + scanning + GATT server, permissions, no crash); with a second phone running the
- * app, peers discover each other and messages flow over Bluetooth with no internet.
+ * Drives the REAL BLE transport on-device and now also the direct-message layer: discovered peers
+ * are tracked (from signed announces) and each can hold an end-to-end encrypted DM thread.
  */
 class BleController(private val context: Context, private val scope: CoroutineScope) {
 
     val log = mutableStateListOf<String>()
-    val messages = mutableStateListOf<ChatMessage>()
+    val messages = mutableStateListOf<ChatMessage>() // #general channel
     val ephId = mutableStateOf("")
     val running = mutableStateOf(false)
+
+    /** Peers learned from announces, keyed by fingerprint hex. */
+    val peers = mutableStateListOf<Peer>()
+
+    /** Per-peer encrypted DM threads, keyed by fingerprint hex. */
+    val dmThreads = mutableStateMapOf<String, SnapshotStateList<ChatMessage>>()
 
     private var node: FfiMeshNode? = null
     private var transport: BleMeshTransport? = null
@@ -57,8 +66,6 @@ class BleController(private val context: Context, private val scope: CoroutineSc
                 var i = 0
                 while (true) {
                     tickOnce()
-                    // Re-announce our identity every ~3s so peers learn our key even if the
-                    // announce sent at link-up was dropped during GATT setup.
                     if (i % 25 == 0) node?.announce()
                     i++
                     delay(120)
@@ -74,6 +81,17 @@ class BleController(private val context: Context, private val scope: CoroutineSc
         messages.add(ChatMessage(text, mine = true, verified = true))
     }
 
+    /** Send an end-to-end encrypted DM to a peer (by fingerprint hex). */
+    fun sendDm(peerFp: String, text: String) {
+        val n = node ?: return
+        if (text.isBlank()) return
+        n.sendDm(peerFp, text)
+        thread(peerFp).add(ChatMessage(text, mine = true, verified = true))
+    }
+
+    fun thread(fp: String): SnapshotStateList<ChatMessage> =
+        dmThreads.getOrPut(fp) { mutableStateListOf() }
+
     private fun tickOnce() {
         val n = node ?: return
         n.tick()
@@ -82,9 +100,30 @@ class BleController(private val context: Context, private val scope: CoroutineSc
                 is FfiEvent.Message ->
                     messages.add(ChatMessage(ev.body, mine = false, verified = ev.verified))
                 is FfiEvent.PeerAppeared ->
-                    log.add("peer identity: ${ev.petname ?: ev.eph.take(8)}")
+                    upsertPeer(ev.fingerprint, ev.petname ?: ev.eph.take(8), verified = false)
+                is FfiEvent.DirectMessage -> {
+                    upsertPeer(ev.sender, ev.sender.take(8), verified = true)
+                    thread(ev.sender).add(ChatMessage(ev.text, mine = false, verified = true))
+                }
+                is FfiEvent.DmSession -> {
+                    upsertPeer(ev.peer, peerName(ev.peer), verified = ev.verified)
+                    log.add("DM session ${if (ev.verified) "verified" else "REJECTED"}: ${ev.peer.take(8)}")
+                }
                 is FfiEvent.PeerLost -> log.add("link lost")
             }
+        }
+    }
+
+    private fun peerName(fp: String): String =
+        peers.firstOrNull { it.fp == fp }?.name ?: fp.take(8)
+
+    private fun upsertPeer(fp: String, name: String, verified: Boolean) {
+        val idx = peers.indexOfFirst { it.fp == fp }
+        if (idx >= 0) {
+            val existing = peers[idx]
+            peers[idx] = existing.copy(name = name, verified = existing.verified || verified)
+        } else {
+            peers.add(Peer(fp, name, verified))
         }
     }
 

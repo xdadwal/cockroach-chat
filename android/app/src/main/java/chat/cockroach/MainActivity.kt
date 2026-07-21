@@ -10,6 +10,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +22,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -99,33 +102,78 @@ private fun BleScreen(ble: BleController) {
             Button(onClick = { launcher.launch(permissions) }, modifier = Modifier.fillMaxWidth()) {
                 Text("Start BLE mesh")
             }
+            ThreadCard("📱 ${Build.MODEL} · #general", ble.messages, Modifier.weight(1f), enabled = false) {}
         } else {
             Text("● live — eph ${ble.ephId.value.take(8)}", color = MaterialTheme.colorScheme.primary)
-        }
 
-        Card(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp)) {
-            Column(Modifier.padding(8.dp)) {
-                Text("📱 ${Build.MODEL} · #general", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
-                LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    items(ble.messages) { Bubble(it) }
+            // Selector: the public channel, or an encrypted DM thread with a discovered peer.
+            var selected by remember { mutableStateOf<String?>(null) }
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                SelectChip("# general", selected == null) { selected = null }
+                ble.peers.forEach { p ->
+                    SelectChip(p.name + if (p.verified) " ✓" else "", selected == p.fp) { selected = p.fp }
                 }
-                var draft by remember { mutableStateOf("") }
-                OutlinedTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    placeholder = { Text("message…") },
-                    singleLine = true,
-                    enabled = ble.running.value,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Button(
-                    onClick = { ble.send(draft); draft = "" },
-                    enabled = ble.running.value,
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                ) { Text("Send") }
+            }
+
+            val sel = selected
+            if (sel == null) {
+                ThreadCard("📱 ${Build.MODEL} · #general", ble.messages, Modifier.weight(1f)) { ble.send(it) }
+            } else {
+                val name = ble.peers.firstOrNull { it.fp == sel }?.name ?: sel.take(8)
+                ThreadCard("🔒 encrypted DM · $name", ble.thread(sel), Modifier.weight(1f)) { ble.sendDm(sel, it) }
             }
         }
         StatusStrip("BLE log", ble.log)
+    }
+}
+
+@Composable
+private fun ThreadCard(
+    title: String,
+    messages: List<ChatMessage>,
+    modifier: Modifier,
+    enabled: Boolean = true,
+    onSend: (String) -> Unit,
+) {
+    Card(modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Column(Modifier.padding(8.dp)) {
+            Text(title, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                items(messages) { Bubble(it) }
+            }
+            var draft by remember(title) { mutableStateOf("") }
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                placeholder = { Text("message…") },
+                singleLine = true,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = { onSend(draft); draft = "" },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            ) { Text("Send") }
+        }
+    }
+}
+
+@Composable
+private fun SelectChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+        Text(label, fontSize = 12.sp, color = fg)
     }
 }
 
