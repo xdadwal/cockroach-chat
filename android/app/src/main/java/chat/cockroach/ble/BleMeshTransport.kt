@@ -43,9 +43,15 @@ class BleMeshTransport(
     private val onLinkUp: (link: ULong, mtu: UInt) -> Unit,
     private val onLinkDown: (link: ULong) -> Unit,
     private val onFrame: (link: ULong, frame: ByteArray) -> Unit,
+    private val onStatus: (String) -> Unit = {},
 ) : BleTransport {
 
     private val tag = "BleMeshTransport"
+
+    private fun status(msg: String) {
+        Log.i(tag, msg)
+        onStatus(msg)
+    }
     private val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val adapter get() = manager.adapter
 
@@ -66,6 +72,12 @@ class BleMeshTransport(
     // --- lifecycle ------------------------------------------------------------------------------
 
     fun start() {
+        val a = adapter
+        if (a == null || !a.isEnabled) {
+            status("Bluetooth is OFF — enable it and restart")
+            return
+        }
+        status("Bluetooth ready; starting mesh (service ${BleConstants.SERVICE_UUID})")
         startGattServer()
         startAdvertising()
         startScanning()
@@ -125,6 +137,7 @@ class BleMeshTransport(
         server.addService(service)
         gattServer = server
         txChar = tx
+        status("GATT server open (peripheral role)")
     }
 
     private val serverCallback = object : BluetoothGattServerCallback() {
@@ -132,6 +145,7 @@ class BleMeshTransport(
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 val id = nextLink.getAndIncrement()
                 links[id] = Endpoint.Peripheral(device)
+                status("LINK UP (peripheral) from ${device.address} — link $id")
                 onLinkUp(id.toULong(), 182u)
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 dropLinksForDevice(device)
@@ -185,8 +199,12 @@ class BleMeshTransport(
     }
 
     private val advertiseCallback = object : AdvertiseCallback() {
+        override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
+            status("advertising started — this phone is discoverable")
+        }
+
         override fun onStartFailure(errorCode: Int) {
-            Log.w(tag, "advertise failed: $errorCode")
+            status("advertise FAILED: $errorCode")
         }
     }
 
@@ -201,19 +219,22 @@ class BleMeshTransport(
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
         scanner.startScan(filters, settings, scanCallback)
+        status("scanning started (central role)")
     }
 
     private val scanCallback = object : ScanCallback() {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
+            val device = result.device
+            status("saw ${device.address} rssi ${result.rssi}")
             if (result.rssi < BleConstants.RSSI_GATE_DBM) return
             if (links.size >= BleConstants.MAX_LINKS) return
-            val device = result.device
             if (isConnected(device)) return
+            status("connecting to ${device.address}")
             device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         }
 
         override fun onScanFailed(errorCode: Int) {
-            Log.w(tag, "scan failed: $errorCode")
+            status("scan FAILED: $errorCode")
         }
     }
 
@@ -251,6 +272,7 @@ class BleMeshTransport(
             }
             val id = nextLink.getAndIncrement()
             links[id] = Endpoint.Central(gatt, rx)
+            status("LINK UP (central) to ${gatt.device.address} — link $id")
             // MTU-3 is the usable ATT payload; clamp to the core's 182 floor assumption.
             onLinkUp(id.toULong(), 182u)
         }

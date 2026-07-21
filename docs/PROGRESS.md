@@ -70,8 +70,8 @@ no Bluetooth).
 - [x] Cross-compile to `arm64-v8a` via NDK 28 (`scripts/build-android-lib.sh`, env-var linker — no cargo-ndk needed).
 - [x] Android Gradle app (AGP 8.5, Kotlin 1.9.24, Compose): builds a debug APK bundling the `.so` + JNA + bindings.
 - [x] **Runs on the emulator**: two real `MeshNode`s exchange signed announces (peer discovery), and a channel message crosses from Ava → Ben **signature-verified** — the entire core runs on-device through UniFFI. (Loopback transport stands in for BLE.)
-- [!] **Real BLE GATT dual-role transport** (`BleMeshTransport` + `MeshForegroundService`): compiles, but **cannot be verified without physical phones** (no BLE in emulator). This is the one genuinely hardware-gated piece. Structure: one service UUID, RX write / TX notify, filtered scan + RSSI gate, status-133 close+retry, `connectedDevice` foreground service, runtime permissions.
-- [ ] On two physical phones (one cheap OEM), airplane mode: discover, connect, chat both ways; reconnect after app kill.
+- [x] **Real BLE stack validated on hardware (Galaxy S23, Android 16)**: tapping "Start BLE mesh" (with runtime `BLUETOOTH_SCAN/CONNECT/ADVERTISE` + `POST_NOTIFICATIONS`) brings up the GATT server, advertising, and scanning with no crash — and a nearby central even connected to our advertised service (peripheral LINK UP). `BleMeshTransport` = one service UUID, RX write / TX notify, filtered scan + RSSI gate, status-133 close+retry, ≤5 links; `MeshForegroundService` = `connectedDevice`. The app has a "Real BLE" mode (permission flow + live status log) alongside the loopback demo.
+- [ ] **Two-phone chat over BLE** — needs a second Android device (only one available in testing). With two phones running the app: discover, connect, chat both ways, reconnect after app kill. This is the last unverified M1 step.
 
 Remaining M1 (SQLCipher store, iOS overflow-area filter) unchanged. See `docs/IMPLEMENTATION_PLAN.md` §M1.
 
