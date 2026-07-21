@@ -45,6 +45,8 @@ class MeshController(private val scope: CoroutineScope) {
                 override fun send(link: ULong, frame: ByteArray) {
                     queue.add(Frame(peer, link, frame))
                 }
+
+                override fun close(link: ULong) {} // loopback has a single link; nothing to dedup
             }
             FfiMeshNode(seed = (i + 1).toULong(), nickname = names[i], transport = transport)
         }

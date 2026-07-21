@@ -81,6 +81,19 @@ fn encrypted_dm_relays_and_eavesdropper_is_blind() {
 }
 
 #[test]
+fn redundant_links_collapse_to_one() {
+    for seed in [1, 2, 3] {
+        let r = scenarios::link_dedup(seed);
+        assert_eq!(
+            r.links_after, 1,
+            "5 links to one peer should dedup to 1 (seed {seed}), got {}",
+            r.links_after
+        );
+        assert!(r.delivered, "messaging must still work after dedup (seed {seed})");
+    }
+}
+
+#[test]
 fn dm_survives_redundant_links() {
     // The regression that broke DMs on real phones: ~5 links to one peer falsely greylisted it.
     for seed in [1, 2, 3, 7] {

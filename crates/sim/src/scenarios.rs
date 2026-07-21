@@ -259,6 +259,30 @@ pub fn dm_over_redundant_links(seed: u64) -> bool {
         .any(|e| matches!(e, MeshEvent::DmReceived { text, .. } if text == "north gate clear"))
 }
 
+pub struct DedupResult {
+    pub links_after: usize,
+    pub delivered: bool,
+}
+
+/// Two phones joined by 5 redundant BLE links. Once each learns the other's identity from its
+/// announce, the mesh should collapse to a single link per peer — and messaging must still work.
+pub fn link_dedup(seed: u64) -> DedupResult {
+    let mut world = World::new(2, crowd_cfg(), seed);
+    for _ in 0..5 {
+        world.link(0, 1, LINK_LATENCY_MS, 0.0, MTU);
+    }
+    world.bootstrap();
+    world.run_for(3000); // announces flow; redundant links get closed
+
+    let links_after = world.link_count(0);
+    let digest = world.node_mut(0).send_channel_message("#general", "still works");
+    world.run_for(1500);
+    DedupResult {
+        links_after,
+        delivered: world.count_with_message(&digest) == 2,
+    }
+}
+
 pub struct FloodResult {
     pub honest_delivered: bool,
     pub attacker_greylisted_effect: bool,

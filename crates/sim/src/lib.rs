@@ -44,17 +44,21 @@ impl Clock for SimClock {
 
 /// Shared buffer of a node's pending outbound `(link, frame)` sends.
 type Outbox = Rc<RefCell<Vec<(LinkId, Vec<u8>)>>>;
+/// Links the node asked to close (redundant-link dedup).
+type Closed = Rc<RefCell<Vec<LinkId>>>;
 
 /// A transport that buffers a node's outbound frames for the world to route.
 #[derive(Clone)]
 pub struct SimTransport {
     outbox: Outbox,
+    closed: Closed,
 }
 
 impl SimTransport {
     fn new() -> Self {
         Self {
             outbox: Rc::new(RefCell::new(Vec::new())),
+            closed: Rc::new(RefCell::new(Vec::new())),
         }
     }
 }
@@ -63,6 +67,9 @@ impl Transport for SimTransport {
     fn send(&self, link: LinkId, frame: &[u8]) {
         self.outbox.borrow_mut().push((link, frame.to_vec()));
     }
+    fn close(&self, link: LinkId) {
+        self.closed.borrow_mut().push(link);
+    }
 }
 
 type SimMeshNode = MeshNode<SimTransport, SimClock, MemoryStore>;
@@ -70,6 +77,7 @@ type SimMeshNode = MeshNode<SimTransport, SimClock, MemoryStore>;
 struct SimNode {
     node: SimMeshNode,
     outbox: Outbox,
+    closed: Closed,
     events: Vec<MeshEvent>,
 }
 
@@ -111,6 +119,7 @@ impl World {
         for i in 0..n {
             let transport = SimTransport::new();
             let outbox = transport.outbox.clone();
+            let closed = transport.closed.clone();
             let mut id_seed = [0u8; 32];
             id_seed[..8].copy_from_slice(&(i as u64).to_le_bytes());
             id_seed[8] = 0xC0;
@@ -131,6 +140,7 @@ impl World {
             nodes.push(SimNode {
                 node,
                 outbox,
+                closed,
                 events: Vec::new(),
             });
         }
@@ -252,6 +262,11 @@ impl World {
         self.nodes[i].node.fingerprint()
     }
 
+    /// How many links a node currently holds (after redundant-link dedup).
+    pub fn link_count(&self, i: usize) -> usize {
+        self.nodes[i].node.link_count()
+    }
+
     /// Fraction of nodes whose store holds `digest`.
     pub fn delivery_ratio(&self, digest: &[u8; 8]) -> f64 {
         let have = self
@@ -320,6 +335,14 @@ impl World {
 
         // 3. Collect events and route outbound frames.
         self.collect_and_route();
+
+        // 4. Honor link closes requested by dedup (tear the edge down on both ends).
+        for i in 0..self.nodes.len() {
+            let closed: Vec<LinkId> = self.nodes[i].closed.borrow_mut().drain(..).collect();
+            for link in closed {
+                self.set_edge_up(link, false);
+            }
+        }
     }
 
     fn collect_and_route(&mut self) {

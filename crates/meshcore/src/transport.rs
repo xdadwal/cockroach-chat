@@ -13,6 +13,11 @@ pub trait Transport {
     /// Enqueue `frame` for delivery on `link`. Best-effort; the platform may drop it if the
     /// link has since died (the core will hear a `LinkDown` and recover).
     fn send(&self, link: LinkId, frame: &[u8]);
+
+    /// Close a link the core has decided is redundant (a second connection to a peer it is already
+    /// linked with). The platform should tear down the underlying BLE connection to save battery
+    /// and free a connection slot. Default: no-op.
+    fn close(&self, _link: LinkId) {}
 }
 
 /// Inbound side: events the platform feeds into [`crate::node::MeshNode::on_transport_event`].

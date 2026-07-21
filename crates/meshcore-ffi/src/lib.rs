@@ -23,6 +23,8 @@ uniffi::setup_scaffolding!();
 #[uniffi::export(callback_interface)]
 pub trait BleTransport: Send + Sync {
     fn send(&self, link: u64, frame: Vec<u8>);
+    /// Tear down a redundant link (the core deduped it to another link with the same peer).
+    fn close(&self, link: u64);
 }
 
 /// Adapter from the core's [`Transport`] to the foreign [`BleTransport`].
@@ -33,6 +35,9 @@ struct FfiTransport {
 impl Transport for FfiTransport {
     fn send(&self, link: meshcore::LinkId, frame: &[u8]) {
         self.inner.send(link, frame.to_vec());
+    }
+    fn close(&self, link: meshcore::LinkId) {
+        self.inner.close(link);
     }
 }
 

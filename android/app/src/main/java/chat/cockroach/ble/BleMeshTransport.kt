@@ -110,6 +110,38 @@ class BleMeshTransport(
         }
     }
 
+    /// The core deduped this link to another connection with the same peer — tear it down to save
+    /// battery and a connection slot, and briefly avoid reconnecting to that address (anti-thrash).
+    override fun close(link: ULong) {
+        when (val ep = links.remove(link.toLong())) {
+            is Endpoint.Central -> {
+                cooldown(ep.gatt.device.address)
+                ep.gatt.close()
+            }
+            is Endpoint.Peripheral -> {
+                cooldown(ep.device.address)
+                gattServer?.cancelConnection(ep.device)
+            }
+            null -> {}
+        }
+        status("closed redundant link $link")
+    }
+
+    private val recentlyDeduped = ConcurrentHashMap<String, Long>()
+
+    private fun cooldown(address: String) {
+        recentlyDeduped[address] = System.currentTimeMillis() + 30_000
+    }
+
+    private fun inCooldown(address: String): Boolean {
+        val until = recentlyDeduped[address] ?: return false
+        if (System.currentTimeMillis() > until) {
+            recentlyDeduped.remove(address)
+            return false
+        }
+        return true
+    }
+
     // --- peripheral role (GATT server + advertising) --------------------------------------------
 
     private fun startGattServer() {
@@ -229,6 +261,7 @@ class BleMeshTransport(
             if (result.rssi < BleConstants.RSSI_GATE_DBM) return
             if (links.size >= BleConstants.MAX_LINKS) return
             if (isConnected(device)) return
+            if (inCooldown(device.address)) return // recently deduped — don't immediately reconnect
             status("connecting to ${device.address}")
             device.connectGatt(context, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
         }

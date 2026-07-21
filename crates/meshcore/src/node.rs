@@ -67,6 +67,9 @@ pub enum MeshEvent {
 struct LinkState {
     mtu: usize,
     peer_eph: Option<EphId>,
+    /// The peer's stable identity on this link, once learned from its announce. Used to detect
+    /// and drop redundant links to the same peer (both phones advertise+scan+connect).
+    peer_fp: Option<Fingerprint>,
 }
 
 pub struct MeshNode<T: Transport, C: Clock, S: Store> {
@@ -470,6 +473,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
                     LinkState {
                         mtu,
                         peer_eph: None,
+                        peer_fp: None,
                     },
                 );
                 // Greet the new neighbour so they can verify our future traffic.
@@ -520,9 +524,16 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             Err(_) => return,
         };
 
-        // Dedup FIRST: a message that arrives many times (relayed copies, or several redundant
-        // links to the same peer) must be counted once. observe() still bumps the suppression
-        // counter for every copy.
+        // Link-local identity tag: a SyncRequest is sent TTL=1 directly on the link and is never
+        // relayed, so its sender is our *direct* neighbour. Tag BEFORE dedup, because the identical
+        // per-link SyncRequests share a digest — dedup would otherwise drop all but one and we'd
+        // only ever tag a single link.
+        if pkt.msg_type == MsgType::SyncRequest {
+            self.note_link_identity(link, pkt.sender);
+        }
+
+        // Dedup: a message that arrives many times (relayed copies, or redundant links) is counted
+        // once. observe() still bumps the suppression counter for every copy.
         let digest = pkt.digest();
         let obs = self.seen.observe(digest, now);
         if !obs.is_new {
@@ -535,11 +546,6 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         // messages and is throttled.
         if !self.rate.allow(pkt.sender, now) {
             return;
-        }
-
-        // Remember which eph is reachable on this link.
-        if let Some(l) = self.links.get_mut(&link) {
-            l.peer_eph = Some(pkt.sender);
         }
 
         match pkt.msg_type {
@@ -566,6 +572,52 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         let delay = relay::relay_delay(&self.cfg, &mut self.rng);
         self.scheduler
             .schedule(pkt.digest(), pkt, arrived_link, delay, self.clock.now_ms());
+    }
+
+    /// Record which peer a link reaches, then drop redundant links to the same identity.
+    fn note_link_identity(&mut self, link: LinkId, eph: EphId) {
+        if let Some(l) = self.links.get_mut(&link) {
+            if l.peer_eph != Some(eph) {
+                l.peer_eph = Some(eph);
+                l.peer_fp = None; // eph changed → re-resolve its fingerprint
+            }
+        }
+        self.dedup_links();
+    }
+
+    /// Resolve link fingerprints from learned announces, then keep exactly one link per peer
+    /// identity (the lowest LinkId), closing the rest so we don't waste battery, airtime, and
+    /// connection slots on ~5 links to the same phone.
+    fn dedup_links(&mut self) {
+        let pending: Vec<(LinkId, EphId)> = self
+            .links
+            .iter()
+            .filter(|(_, l)| l.peer_fp.is_none() && l.peer_eph.is_some())
+            .map(|(id, l)| (*id, l.peer_eph.unwrap()))
+            .collect();
+        for (id, eph) in pending {
+            if let Some(fp) = self.eph_to_fp(eph) {
+                if let Some(l) = self.links.get_mut(&id) {
+                    l.peer_fp = Some(fp);
+                }
+            }
+        }
+
+        // self.links is a BTreeMap (ascending), so the first id seen per fingerprint is the primary.
+        let mut by_fp: BTreeMap<Fingerprint, Vec<LinkId>> = BTreeMap::new();
+        for (id, l) in &self.links {
+            if let Some(fp) = l.peer_fp {
+                by_fp.entry(fp).or_default().push(*id);
+            }
+        }
+        let redundant: Vec<LinkId> = by_fp
+            .values()
+            .flat_map(|ids| ids.iter().skip(1).copied())
+            .collect();
+        for id in redundant {
+            self.links.remove(&id);
+            self.transport.close(id);
+        }
     }
 
     fn handle_announce(&mut self, pkt: &Packet) {
@@ -595,6 +647,8 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             eph: pkt.sender,
             petname: if nick.is_empty() { None } else { Some(nick) },
         });
+        // A newly-learned key may let us resolve (and dedup) links we couldn't identify yet.
+        self.dedup_links();
     }
 
     fn handle_channel(&mut self, pkt: &Packet) {

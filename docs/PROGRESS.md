@@ -20,6 +20,32 @@ Verify everything: `cargo test --workspace && cargo run -p sim -- --nodes 200 --
 
 ---
 
+## Active sequence (ralph loop)
+
+Do these in order; test-first, verify, commit + push each before moving on. Core work is
+simulator-verifiable; Android UI can only be compiled (no device for runtime test in the loop) —
+mark such items and note it.
+
+- [x] **1. Link dedup** — DONE. Core keeps one link per peer identity: a link is tagged from the
+  TTL=1 link-local `SyncRequest` (its sender is the *direct* neighbour; relayed packets carry the
+  originator's id, so tagging from general traffic wrongly merged distinct peers — fixed), then
+  redundant links to the same fingerprint are closed via `Transport::close`. Android tears down the
+  GATT connection + a 30 s reconnect cooldown (anti-thrash). Sim: `redundant_links_collapse_to_one`
+  (5 links → 1, delivery still works); multi-hop/broadcast/partition unaffected. `cargo test
+  --workspace` green (54 unit + 9 scenarios), APK builds. Addresses PERFORMANCE.md #1.
+- [ ] **2. Store-and-forward** — wire the encrypted envelope store into the DM path: a DM to a peer
+  not currently reachable is queued (`queue_envelope`), and drained (`take_envelopes`) + delivered
+  when that peer reappears (announce / link-up). Sim scenario: A DMs B while B is offline; B comes
+  online later and receives it.
+- [ ] **3. QR verification + petnames** — in-person QR fingerprint exchange to promote a peer from
+  unverified → verified, with a user-chosen petname persisted in the store. Core: verification state
+  + petname API; Android: show/scan QR, petname UI. Sim/unit-test the core; compile the UI.
+
+Output `<promise>SEQUENCE-DONE</promise>` only when all three are checked and `cargo test
+--workspace` is green.
+
+---
+
 ## M0 — Rust core + simulator
 
 ### Scaffolding
