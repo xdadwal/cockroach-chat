@@ -54,8 +54,13 @@ class BleController(private val context: Context, private val scope: CoroutineSc
         if (!ticking) {
             ticking = true
             scope.launch(Dispatchers.Main) {
+                var i = 0
                 while (true) {
                     tickOnce()
+                    // Re-announce our identity every ~3s so peers learn our key even if the
+                    // announce sent at link-up was dropped during GATT setup.
+                    if (i % 25 == 0) node?.announce()
+                    i++
                     delay(120)
                 }
             }

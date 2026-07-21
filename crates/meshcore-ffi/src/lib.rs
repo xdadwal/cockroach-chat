@@ -111,6 +111,12 @@ impl FfiMeshNode {
         self.inner.lock().unwrap().join_channel(&name);
     }
 
+    /// Re-broadcast our signed identity announce. Called periodically by the platform so peers
+    /// learn our key even if the announce sent at link-up was dropped during GATT setup.
+    pub fn announce(&self) {
+        self.inner.lock().unwrap().announce();
+    }
+
     /// Originate a channel message; returns the message digest (hex).
     pub fn send_channel_message(&self, channel: String, text: String) -> String {
         hex(&self
