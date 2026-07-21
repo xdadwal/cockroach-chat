@@ -40,9 +40,14 @@ mark such items and note it.
   `store_and_forward_delivers_when_peer_returns` (held while offline, delivered on reconnect). Note:
   the DM UI still only exposes peers already discovered — DM-by-scanned-fingerprint (even offline)
   ties into item 3 (QR).
-- [ ] **3. QR verification + petnames** — in-person QR fingerprint exchange to promote a peer from
-  unverified → verified, with a user-chosen petname persisted in the store. Core: verification state
-  + petname API; Android: show/scan QR, petname UI. Sim/unit-test the core; compile the UI.
+- [x] **3. QR verification + petnames** — DONE. Core: `verify_peer` / `set_petname` /
+  `peer_verified` / `peer_petname`, persisted in the encrypted store; `handle_announce` now
+  preserves verification + petname (never silently downgrades a face-to-face-verified peer). FFI
+  exposes those + `my_fingerprint`. Android: a Verify dialog shows my fingerprint as a QR (ZXing)
+  and scans the peer's QR (`ScanContract`) — on a match it calls `verify_peer`; a petname field and
+  a verified badge in the DM view. Unit-tested core (`verify_and_petname_persist_and_survive_announce`);
+  APK builds with the camera QR flow. Camera scan itself needs on-device validation (compile-only in
+  the loop).
 
 Output `<promise>SEQUENCE-DONE</promise>` only when all three are checked and `cargo test
 --workspace` is green.

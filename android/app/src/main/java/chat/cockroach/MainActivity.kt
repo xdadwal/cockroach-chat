@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -24,6 +25,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import com.google.zxing.BarcodeFormat
+import com.journeyapps.barcodescanner.BarcodeEncoder
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
@@ -122,7 +128,16 @@ private fun BleScreen(ble: BleController) {
             if (sel == null) {
                 ThreadCard("📱 ${Build.MODEL} · #general", ble.messages, Modifier.weight(1f)) { ble.send(it) }
             } else {
-                val name = ble.peers.firstOrNull { it.fp == sel }?.name ?: sel.take(8)
+                val peer = ble.peers.firstOrNull { it.fp == sel }
+                val name = peer?.name ?: sel.take(8)
+                VerifyBar(
+                    peerFp = sel,
+                    verified = peer?.verified == true,
+                    petname = name,
+                    myFingerprint = ble.myFingerprint(),
+                    onSetPetname = { ble.setPetname(sel, it) },
+                    onVerified = { ble.verify(sel) },
+                )
                 ThreadCard("🔒 encrypted DM · $name", ble.thread(sel), Modifier.weight(1f)) { ble.sendDm(sel, it) }
             }
         }
@@ -160,6 +175,86 @@ private fun ThreadCard(
             ) { Text("Send") }
         }
     }
+}
+
+@Composable
+private fun VerifyBar(
+    peerFp: String,
+    verified: Boolean,
+    petname: String,
+    myFingerprint: String,
+    onSetPetname: (String) -> Unit,
+    onVerified: () -> Unit,
+) {
+    var showDialog by remember { mutableStateOf(false) }
+    var name by remember(peerFp) { mutableStateOf(petname) }
+    Row(
+        Modifier.fillMaxWidth().padding(top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            if (verified) "✓ verified" else "unverified",
+            fontSize = 11.sp,
+            color = if (verified) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it; onSetPetname(it) },
+            placeholder = { Text("petname") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Button(onClick = { showDialog = true }) { Text("Verify") }
+    }
+    if (showDialog) {
+        VerifyDialog(
+            peerFp = peerFp,
+            myFingerprint = myFingerprint,
+            onDismiss = { showDialog = false },
+            onVerified = { onVerified(); showDialog = false },
+        )
+    }
+}
+
+@Composable
+private fun VerifyDialog(
+    peerFp: String,
+    myFingerprint: String,
+    onDismiss: () -> Unit,
+    onVerified: () -> Unit,
+) {
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val scanned = result.contents
+        if (scanned != null && scanned.equals(peerFp, ignoreCase = true)) onVerified()
+    }
+    val qr = remember(myFingerprint) {
+        runCatching {
+            BarcodeEncoder().encodeBitmap(myFingerprint, BarcodeFormat.QR_CODE, 512, 512).asImageBitmap()
+        }.getOrNull()
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Verify in person") },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Show this QR to them, then scan theirs.", fontSize = 12.sp)
+                Spacer(Modifier.height(8.dp))
+                qr?.let {
+                    Image(bitmap = it, contentDescription = "my fingerprint QR", modifier = Modifier.size(200.dp))
+                }
+                Text(myFingerprint.take(16) + "…", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                scanLauncher.launch(
+                    ScanOptions().setPrompt("Scan their fingerprint QR").setBeepEnabled(false).setOrientationLocked(false)
+                )
+            }) { Text("Scan their QR") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
 }
 
 @Composable

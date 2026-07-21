@@ -268,6 +268,45 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         }
     }
 
+    /// Mark a peer verified after an in-person QR fingerprint match. Persisted, and preserved
+    /// across future announces (never silently downgraded).
+    pub fn verify_peer(&mut self, fp: Fingerprint) {
+        let mut p = self.peer_or_new(fp);
+        p.verified = true;
+        self.store.upsert_peer(p);
+    }
+
+    /// Set (or clear, if empty) a local petname for a peer. Persisted.
+    pub fn set_petname(&mut self, fp: Fingerprint, name: &str) {
+        let mut p = self.peer_or_new(fp);
+        p.petname = if name.is_empty() {
+            None
+        } else {
+            Some(name.to_string())
+        };
+        self.store.upsert_peer(p);
+    }
+
+    /// Whether a peer has been verified in person.
+    pub fn peer_verified(&self, fp: &Fingerprint) -> bool {
+        self.store.get_peer(fp).map(|p| p.verified).unwrap_or(false)
+    }
+
+    /// A peer's local petname, if set.
+    pub fn peer_petname(&self, fp: &Fingerprint) -> Option<String> {
+        self.store.get_peer(fp).and_then(|p| p.petname)
+    }
+
+    fn peer_or_new(&self, fp: Fingerprint) -> PeerRecord {
+        self.store.get_peer(&fp).unwrap_or(PeerRecord {
+            fingerprint: fp,
+            petname: None,
+            verified: false,
+            last_eph: [0u8; 8],
+            last_seen_ms: self.clock.now_ms(),
+        })
+    }
+
     pub fn panic_wipe(&mut self) {
         self.store.panic_wipe();
         self.eph_keys.clear();
@@ -643,11 +682,13 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         let fingerprint: Fingerprint = Sha256::digest(pubkey).into();
         self.fp_to_eph.insert(fingerprint, pkt.sender);
         self.peer_static_dh.insert(fingerprint, dh_pub);
-        let petname = self.store.get_peer(&fingerprint).and_then(|p| p.petname);
+        // Preserve any in-person verification and petname the user has set for this identity;
+        // a fresh announce must never silently downgrade a peer we've verified face-to-face.
+        let existing = self.store.get_peer(&fingerprint);
         self.store.upsert_peer(PeerRecord {
             fingerprint,
-            petname: petname.clone(),
-            verified: false,
+            petname: existing.as_ref().and_then(|p| p.petname.clone()),
+            verified: existing.as_ref().map(|p| p.verified).unwrap_or(false),
             last_eph: pkt.sender,
             last_seen_ms: pkt.timestamp_ms,
         });
@@ -983,5 +1024,35 @@ mod tests {
         a.send_channel_message("#general", "secret");
         a.panic_wipe();
         assert!(a.store().channel_history("#general", 10).is_empty());
+    }
+
+    #[test]
+    fn verify_and_petname_persist_and_survive_announce() {
+        let mut a = node(5);
+        let fp = [0x42u8; 32];
+        assert!(!a.peer_verified(&fp));
+
+        a.verify_peer(fp);
+        a.set_petname(fp, "ava");
+        assert!(a.peer_verified(&fp));
+        assert_eq!(a.peer_petname(&fp), Some("ava".to_string()));
+
+        // A fresh announce for this identity must not downgrade verification or drop the petname.
+        use crate::store::PeerRecord;
+        let existing = a.store().get_peer(&fp).unwrap();
+        assert!(existing.verified);
+        a.store.upsert_peer(PeerRecord {
+            fingerprint: fp,
+            petname: existing.petname.clone(),
+            verified: existing.verified,
+            last_eph: [9; 8],
+            last_seen_ms: 1,
+        });
+        assert!(a.peer_verified(&fp));
+        assert_eq!(a.peer_petname(&fp), Some("ava".to_string()));
+
+        // Clearing the petname works.
+        a.set_petname(fp, "");
+        assert_eq!(a.peer_petname(&fp), None);
     }
 }

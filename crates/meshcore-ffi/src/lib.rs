@@ -257,6 +257,34 @@ impl FfiMeshNode {
         }
     }
 
+    /// Our own identity fingerprint (hex) — the value to show as a QR for in-person verification.
+    pub fn my_fingerprint(&self) -> String {
+        hex(&self.inner.lock().unwrap().fingerprint())
+    }
+
+    /// Mark a peer verified after scanning their fingerprint QR and confirming it matches.
+    pub fn verify_peer(&self, peer_fingerprint: String) {
+        if let Some(fp) = decode_hex32(&peer_fingerprint) {
+            self.inner.lock().unwrap().verify_peer(fp);
+        }
+    }
+
+    pub fn set_petname(&self, peer_fingerprint: String, name: String) {
+        if let Some(fp) = decode_hex32(&peer_fingerprint) {
+            self.inner.lock().unwrap().set_petname(fp, &name);
+        }
+    }
+
+    pub fn peer_verified(&self, peer_fingerprint: String) -> bool {
+        decode_hex32(&peer_fingerprint)
+            .map(|fp| self.inner.lock().unwrap().peer_verified(&fp))
+            .unwrap_or(false)
+    }
+
+    pub fn peer_petname(&self, peer_fingerprint: String) -> Option<String> {
+        decode_hex32(&peer_fingerprint).and_then(|fp| self.inner.lock().unwrap().peer_petname(&fp))
+    }
+
     /// Report a new link (BLE connection or stand-in) with its usable MTU.
     pub fn link_up(&self, link: u64, mtu: u32) {
         self.inner

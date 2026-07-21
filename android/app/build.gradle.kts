@@ -56,5 +56,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     // UniFFI-generated Kotlin bindings load the native library through JNA.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
+    // QR generation + camera scanning for in-person verification.
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

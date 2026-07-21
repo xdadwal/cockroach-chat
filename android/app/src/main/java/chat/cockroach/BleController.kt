@@ -101,6 +101,26 @@ class BleController(private val context: Context, private val scope: CoroutineSc
     fun thread(fp: String): SnapshotStateList<ChatMessage> =
         dmThreads.getOrPut(fp) { mutableStateListOf() }
 
+    /** Our own fingerprint (hex) — shown as a QR for the peer to scan. */
+    fun myFingerprint(): String = node?.myFingerprint() ?: ""
+
+    /** Mark a peer verified (after their scanned QR matched their known fingerprint). */
+    fun verify(peerFp: String) {
+        node?.verifyPeer(peerFp)
+        refreshPeer(peerFp)
+    }
+
+    fun setPetname(peerFp: String, name: String) {
+        node?.setPetname(peerFp, name)
+        refreshPeer(peerFp)
+    }
+
+    private fun refreshPeer(fp: String) {
+        val n = node ?: return
+        val name = n.peerPetname(fp) ?: peers.firstOrNull { it.fp == fp }?.name ?: fp.take(8)
+        upsertPeer(fp, name, verified = n.peerVerified(fp))
+    }
+
     private fun tickOnce() {
         val n = node ?: return
         n.tick()
@@ -108,8 +128,10 @@ class BleController(private val context: Context, private val scope: CoroutineSc
             when (ev) {
                 is FfiEvent.Message ->
                     messages.add(ChatMessage(ev.body, mine = false, verified = ev.verified))
-                is FfiEvent.PeerAppeared ->
-                    upsertPeer(ev.fingerprint, ev.petname ?: ev.eph.take(8), verified = false)
+                is FfiEvent.PeerAppeared -> {
+                    val name = n.peerPetname(ev.fingerprint) ?: ev.petname ?: ev.eph.take(8)
+                    upsertPeer(ev.fingerprint, name, verified = n.peerVerified(ev.fingerprint))
+                }
                 is FfiEvent.DirectMessage -> {
                     upsertPeer(ev.sender, ev.sender.take(8), verified = true)
                     thread(ev.sender).add(ChatMessage(ev.text, mine = false, verified = true))
