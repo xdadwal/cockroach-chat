@@ -7,6 +7,10 @@ may change the wire format between releases.
 Wire-format changes always bump `PROTOCOL_VERSION` in [`docs/protocol.md`](docs/protocol.md) and are
 called out here under **Protocol**, because two phones on different protocol versions cannot talk.
 
+This log starts at **0.1**, the state of the project when it was opened up for contributors.
+Everything before that is in the git history and in [`docs/PROGRESS.md`](docs/PROGRESS.md), which
+remains the detailed build ledger.
+
 ## [Unreleased]
 
 ### Added
@@ -36,6 +40,29 @@ called out here under **Protocol**, because two phones on different protocol ver
 - `Cargo.toml` declared `rust-version = "1.75"`, but the dependency tree requires 1.85. The
   declaration now matches what actually builds, and CI enforces it.
 
+## [0.1] — 2026-07-22
+
+The baseline this log starts from: a working Android BLE mesh messenger, validated on real
+hardware (Galaxy S23 ↔ OnePlus, airplane mode). **Never published as a binary** — there is no
+signed APK for 0.1, and the release pipeline that would produce one arrived afterwards. It is a
+source milestone, recorded here so later entries have something to be relative to.
+
+At this point the project had:
+
+- **`meshcore`** — the sans-IO Rust core: wire codec with golden vectors, fragmentation, Ed25519 +
+  X25519 identity with hashcash proof-of-work, flooding relay (TTL, jitter, suppression, dedup,
+  rate limiting, greylisting), channels with set reconciliation, Noise XX DMs, and
+  store-and-forward. 57 unit tests.
+- **Deterministic simulator** — 10 scenarios including 200-node broadcast, partition heal,
+  duplicate storm, malicious flooder, and multi-hop relay.
+- **Encrypted persistence** — SQLCipher via `meshcore-store`, keyed by an Android Keystore
+  hardware-wrapped key.
+- **Android app** — dual-role BLE GATT, an always-on foreground-service relay, public channels
+  with rate limits, end-to-end encrypted DMs with MITM binding, in-person QR verification with
+  4-word safety numbers and petnames, panic wipe, `FLAG_SECURE`, and a bilingual
+  English / हिन्दी UI.
+- **CI** — a single Rust job: fmt, clippy, tests, golden vectors, and a simulator smoke run.
+
 ## Cutting a release
 
 1. Move the `Unreleased` entries under a new version heading with today's date.
@@ -46,3 +73,15 @@ called out here under **Protocol**, because two phones on different protocol ver
 
 The first signed release must also fill in the fingerprint placeholder in `SECURITY.md` — until
 that is published, users have no way to verify what they downloaded.
+
+**Optional:** there is no `v0.1` tag. If you want a git anchor for the baseline above, tag the
+commit it describes:
+
+```bash
+git tag -a v0.1 0c4d23d -m "Baseline: Android BLE mesh, E2E DMs, verification, i18n"
+git push origin v0.1
+```
+
+That won't trigger the release workflow — GitHub runs the workflow file as it exists *in the
+tagged commit*, and `0c4d23d` predates `release.yml`. Every tag pushed after this branch merges
+will trigger it, so from then on use throwaway names like `v0.0.1-test` for experiments.
