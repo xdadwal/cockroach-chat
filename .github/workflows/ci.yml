@@ -8,6 +8,12 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# The android job cross-compiles SQLCipher's vendored OpenSSL, which is slow on a cold cache.
+# Superseding pushes cancel the older run rather than queueing behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     name: rust (fmt, clippy, test, sim)
