@@ -9,6 +9,19 @@ blackouts. Named for the thing that survives when the lights go out.
 Every phone is both a client and a relay. Messages hop phone-to-phone across a dense crowd, so
 the network exists only as long as people's radios are on — and it belongs to no one.
 
+> **Status: 🚧 In active development.** Validated on Android hardware (Galaxy S23 ↔ OnePlus).
+> iOS not started; **not yet security-audited** — don't bet a life on it yet.
+
+---
+
+## Screens
+
+Android · dark · English / हिन्दी.
+
+| Announcement | Channels | Encrypted DM | Me |
+|:---:|:---:|:---:|:---:|
+| <img src="docs/screenshots/announcement.png" width="200" alt="Announcement broadcast"> | <img src="docs/screenshots/channels.png" width="200" alt="Public channels"> | <img src="docs/screenshots/dm.png" width="200" alt="Encrypted DM"> | <img src="docs/screenshots/me.png" width="200" alt="Identity & settings"> |
+
 ---
 
 ## Field principles

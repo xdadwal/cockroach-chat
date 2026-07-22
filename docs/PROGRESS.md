@@ -10,13 +10,41 @@ This is the **single source of truth for "what's done / what's next."** The Ralp
   next independent task.
 - Keep this file honest. A checked box means verified, not "written."
 
-**Status:** M0 core is **complete and green** — `cargo test --workspace` passes (49 core unit
-tests + golden vectors + 3 topology + 6 mesh scenarios), `clippy -D warnings` clean, and the
-200-node broadcast sim delivers to 97.5% of nodes. Remaining M0 tail (SQLCipher, UniFFI, JVM
-smoke) is toolchain-gated and deferred into M1 where it is actually testable — see notes.
-**Current milestone:** M0 done except gated tail → next up is **M1 (Android BLE glue)**.
+**Status: 🚧 In active development.** The Rust core is green — `cargo test --workspace` passes
+(57 core unit tests + golden vectors + 3 topology + 10 mesh scenarios), `clippy -D warnings`
+clean, 200-node broadcast sim ≥97% delivery. **M0–M3 are functionally done and validated on real
+hardware** (Galaxy S23 ↔ OnePlus): two-phone offline BLE chat, multi-hop relay + store-and-forward,
+SQLCipher-at-rest, Noise XX E2E DMs with in-person QR verification. On top of the milestone work,
+the Android app now has an always-on foreground-service relay, a full Compose design-system UI,
+panic wipe / FLAG_SECURE, static public channels with rate limits, verify-on-scan, DM handshake
+retry, and **English + हिन्दी** localization. **iOS (M5) not started.** Remaining: hardening
+(M6 — battery matrix, fuzzing ≥8h, threat model, external audit), media (M4), per-message ratchet.
+
+**Current milestone:** M0–M3 delivered on Android → next up is **iOS shell (M5)** and **hardening
+(M6)**; media (M4) deferred.
 
 Verify everything: `cargo test --workspace && cargo run -p sim -- --nodes 200 --scenario broadcast`
+
+---
+
+## App polish (post-M3, validated on S23 + OnePlus)
+
+- [x] **Always-on relay** — mesh moved into a `connectedDevice` foreground service (survives
+  backgrounding / screen-off), with a process-lifetime `BleController` singleton the Activity
+  observes. Battery duty-cycling: low-power BLE scan/advertise when the screen is off.
+- [x] **Design-system UI (Compose)** — warm palette, Archivo + JetBrains Mono, trust-badge
+  language; bottom nav (सूचना / मैं), three-tab feed (Announcement / Channels / Verified),
+  channel view, encrypted DM, in-person verify flow, identity + status, portrait QR scanner.
+- [x] **Verification UX** — 4-word safety numbers, petnames, split Show-my-QR / Scan-a-QR;
+  `start_dm_session` so verifying flips **both** devices to verified with no message; strangers
+  can't DM you without a scan.
+- [x] **DM reliability** — Noise XX handshake **retry** in `tick()` (delivers even when the peer
+  learns our announce only after the first handshake). Regression tests added.
+- [x] **Static public channels** with lenient rate limits (Announcement 1/min, channels 2/10s);
+  channel-message sender names resolved from announces (no more raw eph-id).
+- [x] **Panic wipe** (press-and-hold, hardware-key erasure) + **FLAG_SECURE**.
+- [x] **i18n** — English + हिन्दी: `LocalStrings` catalog, in-app switcher, first-run picker,
+  localized channel display labels (wire ids stay English), Devanagari font scaling.
 
 ---
 
