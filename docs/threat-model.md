@@ -72,10 +72,13 @@ document. **Metadata is the risk.** Radio presence is metadata we cannot fully h
   a 30 s idle timeout; per-sender rate limits with a 60 s greylist, applied network-wide because
   relayed copies carry the origin's id; seen-cache dedup on a TTL-independent digest. The
   `malicious_flooder`, `duplicate_storm`, and `zipbomb_rejected` simulator scenarios cover these.
-- **Residual risk:** the parsers are **not yet fuzzed** — the two exploits that broke our
-  predecessors were both parser bugs. Fuzz targets are tracked as a launch-blocking task. A
-  determined attacker with several radios can still degrade a local cell; BLE airtime is finite and
-  no protocol fixes that.
+  The parsers are fuzzed (`crates/meshcore/fuzz`): `wire_decode`, `frag_reassemble`, and
+  `decompress`, run 60 s per target on every PR and 20 minutes per target nightly.
+- **Residual risk:** fuzzing has so far accumulated hours, not the weeks that make absence of
+  crashes meaningful — M6 sets the bar at ≥8 h clean per target and we are not there. The targets
+  also only cover the three parsers named above; the Noise handshake and the store are not fuzzed.
+  A determined attacker with several radios can still degrade a local cell regardless; BLE airtime
+  is finite and no protocol fixes that.
 
 ### A5 — Sybil / flooding the mesh with fake identities
 - **Partially mitigated:** minting an identity costs a 22-bit hashcash proof of work (~2–4 s on a

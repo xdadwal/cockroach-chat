@@ -58,6 +58,24 @@ cargo run -p sim -- --nodes 200 --scenario broadcast      # deterministic mesh s
 
 Simulator scenarios: `broadcast`, `partition`, `storm`, `flooder`, `relay`, `two`.
 
+### Fuzzing the parsers
+
+The parsers see fully untrusted bytes off the air, and parser bugs are what broke our
+predecessors — so they're fuzzed. Targets live in `crates/meshcore/fuzz` (nightly + `cargo-fuzz`,
+kept out of the workspace so `cargo build --workspace` still works on stable):
+
+```bash
+cargo install cargo-fuzz
+cd crates/meshcore/fuzz
+cargo +nightly fuzz run wire_decode -- -max_total_time=60
+```
+
+Targets: `wire_decode` (packet decoding plus an encode/decode round-trip), `frag_reassemble`
+(stateful reassembly with adversarial frame sequences), `decompress` (the zip-bomb caps). CI runs
+60 s per target on every PR and 20 minutes per target nightly.
+
+**If you add or change a parser, add a fuzz target for it.**
+
 ### Android app
 
 Needs Rust stable with the Android targets, an Android SDK + NDK, and a JDK 17+.

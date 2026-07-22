@@ -1,0 +1,43 @@
+[package]
+name = "meshcore-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.meshcore]
+path = ".."
+
+# The fuzz crate is intentionally excluded from the workspace: it needs nightly and libFuzzer,
+# which would otherwise break `cargo build --workspace` on stable.
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "wire_decode"
+path = "fuzz_targets/wire_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frag_reassemble"
+path = "fuzz_targets/frag_reassemble.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "decompress"
+path = "fuzz_targets/decompress.rs"
+test = false
+doc = false
+bench = false

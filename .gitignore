@@ -50,3 +50,8 @@ android/app/src/main/java/uniffi/
 
 # Gradle wrapper jar must be committed (overrides *.jar above)
 !**/gradle/wrapper/gradle-wrapper.jar
+
+# cargo-fuzz working data (corpus is regenerable; artifacts are crash inputs)
+crates/meshcore/fuzz/corpus/
+crates/meshcore/fuzz/artifacts/
+crates/meshcore/fuzz/coverage/

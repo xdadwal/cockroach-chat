@@ -45,7 +45,8 @@ store-takedown hedge.
 ## Before anyone should rely on this
 
 - **External security audit.** Non-negotiable before we promote this for real protest use.
-- **Fuzzed parsers.** The two exploits that broke comparable projects were both parser bugs.
+- **Sustained fuzzing.** Targets exist for the three parsers and run in CI, but M6's bar is ≥8 h
+  clean per target, and the Noise handshake and store aren't covered yet.
 - **Reproducible builds**, so a release binary can be verified against source rather than trusted.
 
 See [`docs/threat-model.md`](docs/threat-model.md) for what is and isn't defended today.

@@ -61,6 +61,42 @@ jobs:
       - name: Check workspace builds on the declared MSRV
         run: cargo check --workspace --all-targets
 
+  fuzz:
+    name: fuzz (smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # cargo-fuzz needs nightly for -Z sanitizer support.
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/meshcore/fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      # A short smoke run per target — enough to catch an obvious regression on a PR without
+      # holding it up. Real coverage comes from the nightly job below.
+      - name: Fuzz the parsers
+        working-directory: crates/meshcore/fuzz
+        run: |
+          set -euo pipefail
+          for target in wire_decode frag_reassemble decompress; do
+            echo "::group::$target"
+            cargo fuzz run "$target" -- -max_total_time=60 -print_final_stats=1
+            echo "::endgroup::"
+          done
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: crates/meshcore/fuzz/artifacts/
+          if-no-files-found: ignore
+
   audit:
     name: audit (advisories, licenses, bans)
     runs-on: ubuntu-latest
