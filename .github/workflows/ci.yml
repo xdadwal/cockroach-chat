@@ -128,7 +128,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Cross-compile core + generate Kotlin bindings
         # The script auto-detects the NDK from ANDROID_HOME on the runner.
