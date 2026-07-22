@@ -8,8 +8,9 @@ This file is the human-readable index. The license texts themselves live in
 the binary as the OFL requires — not only with this repository. To read them from a downloaded
 APK: `unzip -p cockroach-chat-<version>.apk assets/licenses/OFL-Archivo.txt`.
 
-There is no in-app licenses viewer yet. Bundling satisfies the license terms; a viewer would be
-the friendlier form and is a welcome contribution.
+The app also has a **Credits** page — reachable from the footer of the **Me** screen — naming every
+bundled resource with its author and licence. Bundling the texts is what satisfies the licence
+terms; the Credits page is the readable form of the same acknowledgement.
 
 ## Bundled fonts
 

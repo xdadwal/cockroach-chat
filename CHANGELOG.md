@@ -23,6 +23,8 @@ called out here under **Protocol**, because two phones on different protocol ver
   claim `docs/IMPLEMENTATION_PLAN.md` had been making without them existing.
 - Tag-triggered release workflow producing a signed APK with `SHA256SUMS`.
 - First Android unit test: en/hi `String.format` specifier parity.
+- In-app **Credits** page (Me → footer) naming every bundled font, library and tool with its
+  author and licence.
 
 ### Changed
 - `scripts/build-android-lib.sh` now runs on Linux as well as macOS, validates the NDK path, and
