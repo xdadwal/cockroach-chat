@@ -20,8 +20,12 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.ParcelUuid
+import android.os.PowerManager
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -77,6 +81,15 @@ class BleMeshTransport(
             status("Bluetooth is OFF — enable it and restart")
             return
         }
+        val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        lowPower = !pm.isInteractive
+        context.registerReceiver(
+            screenReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            },
+        )
         status("Bluetooth ready; starting mesh (service ${BleConstants.SERVICE_UUID})")
         startGattServer()
         startAdvertising()
@@ -84,12 +97,39 @@ class BleMeshTransport(
     }
 
     fun stop() {
+        runCatching { context.unregisterReceiver(screenReceiver) }
         adapter?.bluetoothLeScanner?.stopScan(scanCallback)
         adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
         links.values.forEach { if (it is Endpoint.Central) it.gatt.close() }
         links.clear()
         gattServer?.close()
         gattServer = null
+    }
+
+    // --- battery duty-cycling -------------------------------------------------------------------
+    // Screen on → aggressive discovery (low-latency scan, balanced advertising). Screen off → back
+    // off to low-power modes: the mesh keeps relaying while idle-in-pocket without draining battery.
+
+    @Volatile
+    private var lowPower = false
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context?, intent: Intent?) {
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_ON -> setLowPower(false)
+                Intent.ACTION_SCREEN_OFF -> setLowPower(true)
+            }
+        }
+    }
+
+    private fun setLowPower(low: Boolean) {
+        if (low == lowPower) return
+        lowPower = low
+        status(if (low) "screen off — low-power mesh" else "screen on — full-power mesh")
+        adapter?.bluetoothLeScanner?.stopScan(scanCallback)
+        startScanning()
+        adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
+        startAdvertising()
     }
 
     // --- BleTransport (outbound) ----------------------------------------------------------------
@@ -219,7 +259,10 @@ class BleMeshTransport(
     private fun startAdvertising() {
         val advertiser = adapter?.bluetoothLeAdvertiser ?: return
         val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+            .setAdvertiseMode(
+                if (lowPower) AdvertiseSettings.ADVERTISE_MODE_LOW_POWER
+                else AdvertiseSettings.ADVERTISE_MODE_BALANCED
+            )
             .setConnectable(true)
             .setTimeout(0)
             .build()
@@ -248,10 +291,13 @@ class BleMeshTransport(
             ScanFilter.Builder().setServiceUuid(ParcelUuid(BleConstants.SERVICE_UUID)).build(),
         )
         val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .setScanMode(
+                if (lowPower) ScanSettings.SCAN_MODE_LOW_POWER
+                else ScanSettings.SCAN_MODE_LOW_LATENCY
+            )
             .build()
         scanner.startScan(filters, settings, scanCallback)
-        status("scanning started (central role)")
+        status("scanning started (central role, ${if (lowPower) "low-power" else "low-latency"})")
     }
 
     private val scanCallback = object : ScanCallback() {

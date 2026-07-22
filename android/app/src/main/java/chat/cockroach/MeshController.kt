@@ -10,7 +10,13 @@ import uniffi.meshcore_ffi.FfiEvent
 import uniffi.meshcore_ffi.FfiMeshNode
 import java.util.concurrent.ConcurrentLinkedQueue
 
-data class ChatMessage(val body: String, val mine: Boolean, val verified: Boolean)
+data class ChatMessage(
+    val body: String,
+    val mine: Boolean,
+    val verified: Boolean,
+    val sender: String = "",
+    val timestampMs: Long = 0L,
+)
 
 /**
  * Runs TWO real [FfiMeshNode]s (backed by the Rust core) inside the app, wired to each other by an

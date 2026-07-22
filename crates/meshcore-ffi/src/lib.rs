@@ -269,6 +269,14 @@ impl FfiMeshNode {
         }
     }
 
+    /// Start a message-less encrypted session (called right after verification) so the peer's
+    /// device also flips to verified immediately, without waiting for a chat message.
+    pub fn start_dm_session(&self, peer_fingerprint: String) {
+        if let Some(fp) = decode_hex32(&peer_fingerprint) {
+            self.inner.lock().unwrap().start_dm_session(fp);
+        }
+    }
+
     pub fn set_petname(&self, peer_fingerprint: String, name: String) {
         if let Some(fp) = decode_hex32(&peer_fingerprint) {
             self.inner.lock().unwrap().set_petname(fp, &name);
