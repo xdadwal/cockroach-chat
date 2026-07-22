@@ -64,7 +64,13 @@ jobs:
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           # Fails the release if the APK is unsigned or the signature doesn't verify.
           "$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | tee certs.txt
-          FP=$(grep -i 'SHA-256 digest' certs.txt | head -1 | awk '{print $NF}')
+          # Match the certificate digest specifically — apksigner can also print public-key
+          # digests, and publishing the wrong one would make verification instructions useless.
+          FP=$(grep -i 'certificate SHA-256 digest' certs.txt | head -1 | awk '{print $NF}')
+          if [ ${#FP} -ne 64 ]; then
+            echo "::error::could not extract a certificate SHA-256 fingerprint (got '$FP')"
+            exit 1
+          fi
           echo "Signing certificate SHA-256: $FP"
           echo "fingerprint=$FP" >> "$GITHUB_OUTPUT"
           VERSION="${GITHUB_REF_NAME#v}"
