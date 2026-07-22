@@ -18,8 +18,15 @@ never in a public issue.
 3. **The performance backlog.** [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) is a written,
    prioritised list — several items are self-contained and make good first contributions.
 
-**Not looking for iOS work right now.** The project is Android-only and iOS is deferred — please
-don't start a CoreBluetooth port expecting it to be merged. See [`ROADMAP.md`](ROADMAP.md).
+**Not looking for iOS work right now.** The project is Android-only and iOS (was M5) is deferred —
+please don't start a CoreBluetooth port expecting it to be merged.
+
+The reason is focus, not disinterest: the Android app is unaudited, its parsers have only shallow
+fuzzing, and battery duty-cycling isn't built. A second platform would double the surface needing
+review while the first still isn't trustworthy. Apple's background rules also mean a backgrounded
+iPhone barely relays, so a port buys less mesh capacity than its cost suggests. The design work
+survives in [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) § M5, and the core stays
+sans-IO and platform-agnostic, so the door is open by construction if this is revisited.
 
 ## Project invariants
 
@@ -133,9 +140,41 @@ but any claim about mesh behaviour needs either the simulator or real hardware.
 
 ### Review
 
-- Most changes need **one maintainer approval**.
-- Changes to crypto, the wire format, or key handling need **two** — see
-  [`GOVERNANCE.md`](GOVERNANCE.md). This is slower on purpose.
+`master` is protected: changes land by pull request with CI green.
+
+| Change touches | Approvals |
+|---|---|
+| `crates/meshcore` crypto, wire codec, relay, or rate limiting | **2 maintainers** |
+| `docs/protocol.md` or `testvectors/` | **2 maintainers** |
+| `KeyVault.kt` (Android Keystore handling) | **2 maintainers** |
+| Everything else | 1 maintainer |
+
+The two-approval rule is deliberately slower than a project this size needs. A subtle bug in the
+relay or in key handling hurts people who have no way to detect it, and no author should be the
+only reader of that code.
+
+While there aren't two maintainers, the maintainer may ask an outside reviewer with relevant
+expertise and will say so in the PR. *"I couldn't find a second reviewer"* is a reason to wait, not
+a reason to merge.
+
+### Who decides
+
+[@xdadwal](https://github.com/xdadwal) maintains the project and has final say. Ordinary decisions
+happen in issues and PRs by rough consensus; anything that changes the wire protocol, weakens a
+security property, or expands scope should sit in an issue long enough for people to see it —
+silence isn't agreement on those. Architectural decisions get written down as an
+[ADR](docs/decisions/).
+
+There's no application to become a maintainer. Contribute over time — code, review, or sustained
+hardware testing all count, and reviewing other people's PRs well is weighted heavily because it's
+the scarcest thing here — and an existing maintainer will invite you. Stepping back later is normal
+and carries no stigma.
+
+Scope is defined by [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md), including its v2
+deferral list. **"We're not building that yet" is a normal and friendly answer.** Not planned:
+group DMs, global or internet-bridged rooms, media in public channels, message editing, and
+anything assuming city-scale reach — the target is local clusters of ~50–500 people in physical
+proximity, which is what BLE physics supports.
 
 ### Style
 
@@ -152,6 +191,10 @@ This is a tool people might rely on in genuinely dangerous situations, so:
   is the first field principle, and it applies to code as much as to design.
 - If you're unsure whether something is secure, **say so in the PR**. Flagged uncertainty is
   valuable; quiet uncertainty is how people get hurt.
+- **Never claim more certainty than we have.** The app ships for field use before an audit exists,
+  which puts the weight on honesty instead: no implied delivery, no implied anonymity, no verified
+  badge without a real verification. This one isn't a maintainer's to quietly drop — weakening it
+  takes an issue and a written rationale.
 
 ## Code of conduct
 

@@ -126,8 +126,8 @@ simulator. The native shell owns only the BLE radio and the screen.
 - **Local clusters, ~50–500 people in physical proximity** — not city-scale realtime chat. BLE
   physics (5–8 reliable links/phone, limited airtime) doesn't allow it, and we don't pretend it does.
 - **Android only.** There is no iOS app, and iPhones cannot join the mesh at all. In a mixed crowd
-  that is a large fraction of people you simply cannot reach. iOS is deferred, not planned — see
-  [`ROADMAP.md`](ROADMAP.md).
+  that is a large fraction of people you simply cannot reach. iOS is deferred — see
+  [`CONTRIBUTING.md`](CONTRIBUTING.md).
 - **The network needs radios on.** The mesh exists only while people's screens are on and the app
   is relaying; the UI is honest that screen-on carries the mesh.
 - **Public channels are public.** Anyone in radio range reads them — there is no lock, ever.
@@ -138,6 +138,25 @@ simulator. The native shell owns only the BLE radio and the screen.
   at all. Never treat "sent" as "delivered" for anything that matters.
 
 See `docs/research-brief.md` for the constraints and prior-art lessons everything is built on.
+
+### If you take this into the field
+
+This is built to be used — in a protest, a blackout, a disaster — and we'd rather it be in your
+hands than withheld until some future perfect version. Use it with your eyes open:
+
+- **Always have a fallback that does not depend on this app.** A meeting point, a time, a person.
+- **Never treat "sent" as "delivered"** for anything that matters. Confirm out of band.
+- **Assume transmitting is observable.** Encryption protects what you say, not the fact that a
+  radio near you is speaking.
+- **Verify in person** before trusting a DM's identity. Unverified means unverified.
+
+### What we still owe you
+
+- **An external security audit.** The single biggest gap. Committed, unscheduled — and we'll say so
+  loudly when it happens, equally loudly if it finds something.
+- **Sustained fuzzing.** Targets exist for the three parsers, but CI runs them 60 s each on PRs:
+  regression detection, not a search for new bugs. The Noise handshake and store have no targets.
+- **Reproducible builds**, so a release binary can be checked against source rather than trusted.
 
 ---
 
@@ -201,9 +220,8 @@ valuable thing anyone can offer right now.
 Contributions are very welcome — especially **security review** and **hardware reports** from
 Android device combinations we don't own.
 
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, the project invariants, how to run the simulator
-- [`ROADMAP.md`](ROADMAP.md) — what's done, what's next, what we're deliberately not building
-- [`GOVERNANCE.md`](GOVERNANCE.md) — how decisions get made, how to become a maintainer
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, the project invariants, review rules, what's out of
+  scope
 - [`SECURITY.md`](SECURITY.md) — **report vulnerabilities privately**, never in a public issue
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
 

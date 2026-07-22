@@ -17,8 +17,7 @@ remains the detailed build ledger.
 - App icon: adaptive launcher icon with a monochrome layer for themed icons, a matching
   notification icon, and the mark rendered in-app.
 - `docs/threat-model.md` — what is defended, and plainly what is not.
-- `SECURITY.md`, `CONTRIBUTING.md`, `GOVERNANCE.md`, `CODE_OF_CONDUCT.md`, `ROADMAP.md`,
-  `NOTICE.md`, issue and PR templates.
+- `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `NOTICE.md`, issue and PR templates.
 - SIL Open Font License texts for the bundled Archivo and JetBrains Mono fonts, shipped inside the
   APK under `assets/licenses/` as the OFL requires.
 - CI jobs for Android (build, lint, unit tests), dependency audit (`cargo-deny`), MSRV, and a

@@ -13,6 +13,9 @@ best-effort. Keep a fallback that doesn't depend on it.
 
 An external audit is a commitment we intend to keep, not a box already ticked.
 
+Embargoed fixes may be developed privately and merged with less public discussion than usual; the
+reasoning is published alongside the advisory once it's out.
+
 Read [`docs/threat-model.md`](docs/threat-model.md) before deciding this is appropriate for your
 situation. It is explicit about what is *not* defended: over-the-air anonymity, traffic analysis,
 Sybil attacks without out-of-band verification, an unlocked seized device, a compromised OS, and

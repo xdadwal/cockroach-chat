@@ -163,7 +163,7 @@ resumes after walking away and back.
 
 ### M5 — iOS shell (~4 wks) — **DEFERRED**
 > **Deferred indefinitely; the project is Android-only.** Kept here as design research so nothing
-> is lost if it's picked back up — see the reasoning in [`ROADMAP.md`](../ROADMAP.md) § Deferred.
+> is lost if it's picked back up — see the reasoning in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 > The core stays sans-IO and platform-agnostic, so the door remains open by construction.
 
 `build-xcframework.sh` (aarch64-ios + sim, Swift bindings, SPM package; macOS CI job) →

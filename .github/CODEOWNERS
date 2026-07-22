@@ -1,4 +1,4 @@
-# Review ownership. See GOVERNANCE.md — the paths below need two maintainer approvals,
+# Review ownership. See CONTRIBUTING.md § Review — the paths below need two approvals,
 # because a subtle bug in them hurts users who have no way to detect it.
 
 * @xdadwal
