@@ -59,7 +59,7 @@ import com.journeyapps.barcodescanner.ScanOptions
 private fun shortId(eph: String): String =
     if (eph.length < 6) eph.uppercase() else eph.take(6).uppercase().chunked(2).joinToString("·")
 
-private fun Modifier.bottomHairline() = drawBehind {
+internal fun Modifier.bottomHairline() = drawBehind {
     drawLine(SolidColor(CcInk.copy(alpha = 0.1f)), Offset(0f, size.height), Offset(size.width, size.height), 1f)
 }
 
@@ -80,6 +80,7 @@ private sealed interface Route {
     data class Dm(val fp: String) : Route
     data class Verify(val peerFp: String?, val scan: Boolean = false) : Route
     data object Status : Route
+    data object Credits : Route
 }
 
 @Composable
@@ -148,9 +149,15 @@ private fun MeshShell(ble: BleController) {
                 is Route.Dm -> DmScreen(ble, r.fp, ::pop)
                 is Route.Verify -> VerifyFlow(ble, r.peerFp, r.scan, onDone = { fp -> pop(); if (fp != null) push(Route.Dm(fp)) }, onCancel = ::pop)
                 Route.Status -> StatusScreen(ble, ::pop)
+                Route.Credits -> CreditsScreen(::pop)
                 null -> when (tab) {
                     NavTab.Feed -> FeedScreen(ble, feedTab, { feedTab = it }, onOpenChannel = { push(Route.Channel(it)) }, onOpenDm = { push(Route.Dm(it)) }, onStatus = { push(Route.Status) })
-                    NavTab.Me -> IdentityScreen(ble, onShowQr = { push(Route.Verify(null, scan = false)) }, onScanQr = { push(Route.Verify(null, scan = true)) })
+                    NavTab.Me -> IdentityScreen(
+                        ble,
+                        onShowQr = { push(Route.Verify(null, scan = false)) },
+                        onScanQr = { push(Route.Verify(null, scan = true)) },
+                        onCredits = { push(Route.Credits) },
+                    )
                 }
             }
         }
@@ -594,7 +601,7 @@ private fun VerifyFlow(ble: BleController, peerFp: String?, startScan: Boolean, 
 // --- identity (ME) + panic entry ----------------------------------------------------------------
 
 @Composable
-private fun IdentityScreen(ble: BleController, onShowQr: () -> Unit, onScanQr: () -> Unit) {
+private fun IdentityScreen(ble: BleController, onShowQr: () -> Unit, onScanQr: () -> Unit, onCredits: () -> Unit) {
     val s = LocalStrings.current
     Column(Modifier.fillMaxSize().background(CcBase)) {
         Column(Modifier.fillMaxWidth().bottomHairline().padding(start = 18.dp, top = 15.dp, end = 18.dp, bottom = 12.dp)) {
@@ -646,6 +653,20 @@ private fun IdentityScreen(ble: BleController, onShowQr: () -> Unit, onScanQr: (
                     Spacer(Modifier.height(14.dp))
                     HoldBarToWipe(onWiped = { ble.panicWipe() })
                 }
+            }
+            // Footer: quiet by design — it should be findable, not compete with the actions above.
+            item {
+                Spacer(Modifier.height(22.dp))
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp)).clickable(onClick = onCredits)
+                        .padding(vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    CcText(s.creditsFooter, 13, FontWeight.Bold, CcInkMute(0.7f))
+                    Spacer(Modifier.height(2.dp))
+                    CcText(s.creditsFooterSub, 11, FontWeight.Medium, CcInkMute(0.4f))
+                }
+                Spacer(Modifier.height(6.dp))
             }
         }
     }
@@ -765,7 +786,7 @@ private fun MessageList(messages: List<ChatMessage>, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun BackIcon(onBack: () -> Unit) {
+internal fun BackIcon(onBack: () -> Unit) {
     Box(Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onBack).padding(4.dp)) {
         Icon(Icons.AutoMirrored.Filled.ArrowBack, "back", tint = CcInkMute(0.7f), modifier = Modifier.size(22.dp))
     }

@@ -113,6 +113,20 @@ class Strings(
     val statVerified: String,
     val batteryAware: String,
     val recentActivity: String,
+    // credits — section headings and prose are translated; the credited names, authors and
+    // licence identifiers are proper nouns and stay as their owners write them.
+    val creditsFooter: String,
+    val creditsFooterSub: String,
+    val creditsTitle: String,
+    val creditsSubtitle: String,
+    val creditsIntro: String,
+    val creditsType: String,
+    val creditsCrypto: String,
+    val creditsCore: String,
+    val creditsAndroid: String,
+    val creditsTooling: String,
+    val creditsThanks: String,
+    val creditsFull: String,
     // channel display names (keyed by the English wire id, which never changes)
     val channelNames: Map<String, String>,
 )
@@ -198,6 +212,21 @@ val EnStrings = Strings(
     statVerified = "verified nearby",
     batteryAware = "Battery-aware. Drops to low-power relay when the screen is off or battery is low.",
     recentActivity = "Recent activity",
+    creditsFooter = "Credits",
+    creditsFooterSub = "The work this app is built on",
+    creditsTitle = "Credits",
+    creditsSubtitle = "open source",
+    creditsIntro = "Cockroach Chat is assembled almost entirely from work other people gave away. " +
+        "This page names them.",
+    creditsType = "Type",
+    creditsCrypto = "Cryptography",
+    creditsCore = "Core & bindings",
+    creditsAndroid = "App",
+    creditsTooling = "Tooling",
+    creditsThanks = "We hand-roll no cryptography. Whatever safety this app offers, these people " +
+        "built it — the mistakes are ours alone.",
+    creditsFull = "Font licences ship inside this app. The full dependency list is in NOTICE.md " +
+        "in the source repository.",
     channelNames = mapOf(
         "general" to "general", "alerts" to "alerts", "medics" to "medics",
         "supplies" to "supplies", "lost+found" to "lost+found", "exits" to "exits",
@@ -285,6 +314,20 @@ val HiStrings = Strings(
     statVerified = "पास में सत्यापित",
     batteryAware = "बैटरी के प्रति सजग। स्क्रीन बंद या बैटरी कम होने पर लो-पावर रिले पर चला जाता है।",
     recentActivity = "हाल की गतिविधि",
+    creditsFooter = "श्रेय",
+    creditsFooterSub = "जिनके काम पर यह ऐप बना है",
+    creditsTitle = "श्रेय",
+    creditsSubtitle = "ओपन सोर्स",
+    creditsIntro = "कॉकरोच चैट लगभग पूरी तरह उस काम से बना है जो दूसरे लोगों ने मुफ़्त में साझा किया। " +
+        "यह पन्ना उनके नाम दर्ज करता है।",
+    creditsType = "टाइपफ़ेस",
+    creditsCrypto = "क्रिप्टोग्राफ़ी",
+    creditsCore = "कोर और बाइंडिंग",
+    creditsAndroid = "ऐप",
+    creditsTooling = "उपकरण",
+    creditsThanks = "हम कोई क्रिप्टोग्राफ़ी खुद नहीं लिखते। यह ऐप जितना भी सुरक्षित है, वह इन्हीं लोगों " +
+        "का बनाया हुआ है — ग़लतियाँ सिर्फ़ हमारी हैं।",
+    creditsFull = "फ़ॉन्ट लाइसेंस इसी ऐप के भीतर मौजूद हैं। पूरी सूची सोर्स रिपॉज़िटरी की NOTICE.md में है।",
     channelNames = mapOf(
         "general" to "सामान्य", "alerts" to "चेतावनी", "medics" to "चिकित्सा",
         "supplies" to "आपूर्ति", "lost+found" to "खोया-पाया", "exits" to "निकास",
