@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  App icon background: warm near-black, lit slightly from above, with a faint
+  amber bloom behind the node so the mark reads as emitting rather than printed.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="54"
+                android:centerY="34.6"
+                android:gradientRadius="130">
+                <item android:offset="0.0" android:color="#FF1B1811" />
+                <item android:offset="0.72" android:color="#FF0D0C0A" />
+                <item android:offset="1.0" android:color="#FF0D0C0A" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="54"
+                android:centerY="54"
+                android:gradientRadius="43.2">
+                <item android:offset="0.0" android:color="#29FEC265" />
+                <item android:offset="0.68" android:color="#00FEC265" />
+                <item android:offset="1.0" android:color="#00FEC265" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

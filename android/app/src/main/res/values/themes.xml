@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Compose draws the real UI; this only styles the window before first frame. -->
-    <style name="Theme.CockroachChat" parent="android:Theme.Material.NoActionBar" />
+    <!-- Compose draws the real UI; this only styles the window before first frame.
+         The base surface keeps the cold-start flash on-brand instead of white. -->
+    <style name="Theme.CockroachChat" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/cc_base</item>
+    </style>
 </resources>

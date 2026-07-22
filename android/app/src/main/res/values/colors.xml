@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors CcBase / CcAmber in ui/Theme.kt for the resource-only surfaces
+         (window background, adaptive-icon tooling) that can't read Compose colors. -->
+    <color name="cc_base">#FF0D0C0A</color>
+    <color name="cc_signal">#FFFEC265</color>
+</resources>

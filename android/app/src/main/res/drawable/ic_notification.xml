@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status-bar icon for the "Mesh active" foreground-service notification. Android
+  renders notification small icons as a white silhouette, so this is the app mark
+  flattened to solid white in the standard 24dp box.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+
+    <group
+        android:scaleX="0.2292"
+        android:scaleY="0.2292"
+        android:translateX="1"
+        android:translateY="1">
+
+        <path
+            android:pathData="M20,24a38,38 0 0 0 0,56"
+            android:strokeColor="#FFFFFF"
+            android:strokeAlpha="0.6"
+            android:strokeWidth="7"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M76,24a38,38 0 0 1 0,56"
+            android:strokeColor="#FFFFFF"
+            android:strokeAlpha="0.6"
+            android:strokeWidth="7"
+            android:strokeLineCap="round" />
+
+        <path
+            android:pathData="M32,36a22,22 0 0 0 0,32"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="7"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M64,36a22,22 0 0 1 0,32"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="7"
+            android:strokeLineCap="round" />
+
+        <path
+            android:pathData="M46,44C44,36 42,30 40,25"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="3"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M50,44C52,36 54,30 56,25"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="3"
+            android:strokeLineCap="round" />
+
+        <path
+            android:pathData="M39.5,52a8.5,8.5 0 1,0 17,0a8.5,8.5 0 1,0 -17,0z"
+            android:fillColor="#FFFFFF" />
+    </group>
+</vector>
