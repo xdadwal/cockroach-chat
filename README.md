@@ -190,6 +190,7 @@ Contributions are very welcome — especially **security review**, **hardware re
 combinations we don't own, and **iOS**.
 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, the project invariants, how to run the simulator
+- [`ROADMAP.md`](ROADMAP.md) — what's done, what's next, what we're deliberately not building
 - [`GOVERNANCE.md`](GOVERNANCE.md) — how decisions get made, how to become a maintainer
 - [`SECURITY.md`](SECURITY.md) — **report vulnerabilities privately**, never in a public issue
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
