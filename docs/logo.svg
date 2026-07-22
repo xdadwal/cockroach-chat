@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" fill="none" role="img" aria-label="Cockroach Chat">
+  <defs>
+    <radialGradient id="cc-bg" cx="50%" cy="32%" r="120%">
+      <stop offset="0%" stop-color="#1B1811"/>
+      <stop offset="72%" stop-color="#0D0C0A"/>
+    </radialGradient>
+    <radialGradient id="cc-glow" cx="50%" cy="50%" r="40%">
+      <stop offset="0%" stop-color="#FEC265" stop-opacity="0.16"/>
+      <stop offset="68%" stop-color="#FEC265" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="128" height="128" rx="29" fill="url(#cc-bg)"/>
+  <rect width="128" height="128" rx="29" fill="url(#cc-glow)"/>
+  <g transform="translate(33 33) scale(0.6458)" fill="none" stroke="#FEC265" stroke-linecap="round">
+    <path d="M20 24a38 38 0 000 56" stroke-width="6.5" stroke-opacity=".5"/>
+    <path d="M76 24a38 38 0 010 56" stroke-width="6.5" stroke-opacity=".5"/>
+    <path d="M32 36a22 22 0 000 32" stroke-width="6.5"/>
+    <path d="M64 36a22 22 0 010 32" stroke-width="6.5"/>
+    <path d="M46 44C44 36 42 30 40 25" stroke-width="2.5"/>
+    <path d="M50 44C52 36 54 30 56 25" stroke-width="2.5"/>
+    <circle cx="48" cy="52" r="8.5" fill="#FEC265" stroke="none"/>
+  </g>
+</svg>

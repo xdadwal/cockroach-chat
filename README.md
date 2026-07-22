@@ -1,4 +1,6 @@
-# 🪳 Cockroach Chat
+<img src="docs/logo.svg" width="96" alt="Cockroach Chat">
+
+# Cockroach Chat
 
 **You cannot squash a signal.**
 

@@ -64,7 +64,7 @@ class MeshForegroundService : Service() {
         val notification: Notification = Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("Cockroach Chat")
             .setContentText("Mesh active — carrying the network")
-            .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setSmallIcon(chat.cockroach.R.drawable.ic_notification)
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Stop", stopIntent).build())
             .build()

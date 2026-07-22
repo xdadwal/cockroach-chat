@@ -188,7 +188,12 @@ private fun AppHeader(ble: BleController, onStatus: () -> Unit) {
         Modifier.fillMaxWidth().bottomHairline().padding(horizontal = 16.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        CcText("Cockroach", 17, FontWeight.Black, CcInk, upper = true, letterSpacing = (-0.3))
+        // Logo lockup: the app mark sits tight against the wordmark, so it gets its own Row rather
+        // than inheriting the wider spacing used between the status chips.
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            AppMark(CcAmber, 20.dp)
+            CcText("Cockroach", 17, FontWeight.Black, CcInk, upper = true, letterSpacing = (-0.3))
+        }
         Spacer(Modifier.weight(1f))
         MeshChip(MeshState.Live, Modifier.clickable(onClick = onStatus))
         ShortIdChip(shortId(ble.ephId.value))
@@ -203,6 +208,8 @@ private fun OnboardingNameScreen(ble: BleController) {
     var name by remember { mutableStateOf(ble.displayName.value) }
     Column(Modifier.fillMaxSize().background(CcBase).padding(horizontal = 26.dp)) {
         Spacer(Modifier.weight(1f))
+        AppMark(CcAmber, 40.dp)
+        Spacer(Modifier.height(20.dp))
         CcText("Cockroach\nChat.", 44, FontWeight.Black, CcInk, upper = true, letterSpacing = (-1.0), lineHeightMul = 0.95)
         Spacer(Modifier.height(16.dp))
         CcText(s.onbTagline, 15, FontWeight.Medium, CcInkMute(0.62f), lineHeightMul = 1.5)
@@ -260,6 +267,8 @@ private fun MeshOffScreen(ble: BleController) {
     }
     Column(Modifier.fillMaxSize().background(CcBase)) {
         Row(Modifier.fillMaxWidth().bottomHairline().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            AppMark(CcAmber, 21.dp)
+            Spacer(Modifier.width(7.dp))
             CcText("Cockroach", 18, FontWeight.Black, CcInk, upper = true, letterSpacing = (-0.4))
             Spacer(Modifier.weight(1f))
             MeshChip(MeshState.Off)
@@ -267,7 +276,7 @@ private fun MeshOffScreen(ble: BleController) {
         Column(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 34.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Box(Modifier.size(132.dp).dashedBorder(CcInkMute(0.22f), 66.dp, 2.dp), contentAlignment = Alignment.Center) {
                 Box(Modifier.size(88.dp).clip(RoundedCornerShape(50)).background(CcAmber), contentAlignment = Alignment.Center) {
-                    BroadcastGlyph(CcOnAmber, 40.dp)
+                    AppMark(CcOnAmber, 46.dp)
                 }
             }
             Spacer(Modifier.height(30.dp))

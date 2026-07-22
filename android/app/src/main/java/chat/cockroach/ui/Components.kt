@@ -182,6 +182,57 @@ fun BroadcastGlyph(color: Color, size: Dp = 15.dp) {
     }
 }
 
+// --- app mark ----------------------------------------------------------------------------------
+
+/**
+ * The Cockroach Chat mark — a node with two antennae and two wavefronts radiating out, drawn on the
+ * same 96-unit grid as the launcher icon (`res/drawable/ic_launcher_foreground.xml`). Keep the two
+ * in sync: this is the in-app rendering of that icon, not a separate glyph.
+ *
+ * Distinct from [BroadcastGlyph], which is the small concentric-ring *status* mark for chips.
+ */
+@Composable
+fun AppMark(color: Color, size: Dp = 22.dp) {
+    Canvas(Modifier.size(size)) {
+        val u = this.size.minDimension / 96f          // design grid -> px
+        fun w(x: Float) = x * u
+
+        // Wavefront arcs. Each is a 96-grid arc of radius `radius` whose two endpoints sit at
+        // x = endX and y = 52 ± chordHalf — the same anchors the icon's SVG arcs use. `left`
+        // mirrors the arc to the other side of the node.
+        fun wavefront(endX: Float, radius: Float, chordHalf: Float, alpha: Float, left: Boolean) {
+            val dx = kotlin.math.sqrt(radius * radius - chordHalf * chordHalf)
+            val cx = if (left) endX + dx else endX - dx
+            val sweep = 2f * Math.toDegrees(kotlin.math.asin(chordHalf / radius).toDouble()).toFloat()
+            val start = if (left) 180f - sweep / 2f else -sweep / 2f
+            drawArc(
+                color = color, startAngle = start, sweepAngle = sweep, useCenter = false,
+                topLeft = Offset(w(cx - radius), w(52f - radius)),
+                size = Size(w(radius * 2), w(radius * 2)),
+                style = Stroke(w(6.5f), cap = androidx.compose.ui.graphics.StrokeCap.Round),
+                alpha = alpha,
+            )
+        }
+        wavefront(endX = 20f, radius = 38f, chordHalf = 28f, alpha = 0.5f, left = true)
+        wavefront(endX = 76f, radius = 38f, chordHalf = 28f, alpha = 0.5f, left = false)
+        wavefront(endX = 32f, radius = 22f, chordHalf = 16f, alpha = 1f, left = true)
+        wavefront(endX = 64f, radius = 22f, chordHalf = 16f, alpha = 1f, left = false)
+
+        // Antennae.
+        val antennaStroke = Stroke(w(2.5f), cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        for (dir in listOf(-1f, 1f)) {
+            val p = androidx.compose.ui.graphics.Path().apply {
+                moveTo(w(48f + dir * 2f), w(44f))
+                cubicTo(w(48f + dir * 4f), w(36f), w(48f + dir * 6f), w(30f), w(48f + dir * 8f), w(25f))
+            }
+            drawPath(p, color, style = antennaStroke)
+        }
+
+        // The node.
+        drawCircle(color, radius = w(8.5f), center = Offset(w(48f), w(52f)))
+    }
+}
+
 // --- scan-frame glyph -------------------------------------------------------------------------
 
 @Composable

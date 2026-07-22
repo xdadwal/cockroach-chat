@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  App icon foreground: "a signal, radiating" — one node broadcasting outward.
+  The mark lives in a 96x96 design grid; the group scales it to 62dp inside the
+  108dp adaptive canvas, which keeps it well within the 72dp safe zone.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <group
+        android:scaleX="0.6458"
+        android:scaleY="0.6458"
+        android:translateX="23"
+        android:translateY="23">
+
+        <!-- outer wavefront (fainter — the signal further from the node) -->
+        <path
+            android:pathData="M20,24a38,38 0 0 0 0,56"
+            android:strokeColor="#FEC265"
+            android:strokeAlpha="0.5"
+            android:strokeWidth="6.5"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M76,24a38,38 0 0 1 0,56"
+            android:strokeColor="#FEC265"
+            android:strokeAlpha="0.5"
+            android:strokeWidth="6.5"
+            android:strokeLineCap="round" />
+
+        <!-- inner wavefront -->
+        <path
+            android:pathData="M32,36a22,22 0 0 0 0,32"
+            android:strokeColor="#FEC265"
+            android:strokeWidth="6.5"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M64,36a22,22 0 0 1 0,32"
+            android:strokeColor="#FEC265"
+            android:strokeWidth="6.5"
+            android:strokeLineCap="round" />
+
+        <!-- antennae -->
+        <path
+            android:pathData="M46,44C44,36 42,30 40,25"
+            android:strokeColor="#FEC265"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round" />
+        <path
+            android:pathData="M50,44C52,36 54,30 56,25"
+            android:strokeColor="#FEC265"
+            android:strokeWidth="2.5"
+            android:strokeLineCap="round" />
+
+        <!-- the node -->
+        <path
+            android:pathData="M39.5,52a8.5,8.5 0 1,0 17,0a8.5,8.5 0 1,0 -17,0z"
+            android:fillColor="#FEC265" />
+    </group>
+</vector>
