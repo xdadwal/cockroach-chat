@@ -1,0 +1,107 @@
+name: Release
+
+# Tag-triggered only: pull requests from forks can't read secrets, so the signing key is never
+# exposed to untrusted code.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: build + sign APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Cross-compile core for all ABIs
+        run: ./scripts/build-android-lib.sh
+
+      - name: Write signing config
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::KEYSTORE_BASE64 is not set — refusing to publish an unsigned release."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/release.jks
+          cat > android/keystore.properties <<EOF
+          storeFile=release.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Assemble release APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Verify signature and record fingerprint
+        id: verify
+        run: |
+          set -euo pipefail
+          APK=$(find android/app/build/outputs/apk/release -name '*.apk' | head -1)
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          # Fails the release if the APK is unsigned or the signature doesn't verify.
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$APK" | tee certs.txt
+          FP=$(grep -i 'SHA-256 digest' certs.txt | head -1 | awk '{print $NF}')
+          echo "Signing certificate SHA-256: $FP"
+          echo "fingerprint=$FP" >> "$GITHUB_OUTPUT"
+          VERSION="${GITHUB_REF_NAME#v}"
+          cp "$APK" "cockroach-chat-${VERSION}.apk"
+          sha256sum "cockroach-chat-${VERSION}.apk" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true          # reviewed by a human before it goes live
+          generate_release_notes: true
+          files: |
+            cockroach-chat-*.apk
+            SHA256SUMS
+          body: |
+            > **NOT AUDITED.** This software has had no external security audit and cannot make you
+            > anonymous over the air. Read [the threat model](https://github.com/xdadwal/cockroach-chat/blob/master/docs/threat-model.md)
+            > before relying on it for anything that matters.
+
+            ### Verify what you downloaded
+
+            ```bash
+            apksigner verify --print-certs cockroach-chat-*.apk
+            sha256sum -c SHA256SUMS
+            ```
+
+            The signing certificate SHA-256 must equal the fingerprint published in
+            [SECURITY.md](https://github.com/xdadwal/cockroach-chat/blob/master/SECURITY.md):
+
+            ```
+            ${{ steps.verify.outputs.fingerprint }}
+            ```
+
+            Builds are not yet reproducible, so this signature proves the artifact came from this
+            workflow — nothing more.
+
+      - name: Clean up signing material
+        if: always()
+        run: rm -f android/release.jks android/keystore.properties

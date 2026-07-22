@@ -1,0 +1,44 @@
+name: 💡 Feature or improvement
+description: Propose a change
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Worth checking first: [`docs/IMPLEMENTATION_PLAN.md`](https://github.com/xdadwal/cockroach-chat/blob/master/docs/IMPLEMENTATION_PLAN.md)
+        has a v2 deferral list, and [`docs/PERFORMANCE.md`](https://github.com/xdadwal/cockroach-chat/blob/master/docs/PERFORMANCE.md)
+        already tracks known work. "We're not building that yet" is a normal answer here.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation a user is in, not the solution you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What are you proposing?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: invariants
+    attributes:
+      label: Invariant check
+      description: |
+        See [project invariants](https://github.com/xdadwal/cockroach-chat/blob/master/CONTRIBUTING.md#project-invariants).
+        Ticking nothing is fine — it just tells us where to look.
+      options:
+        - label: Changes the wire format (needs a `PROTOCOL_VERSION` bump + regenerated golden vectors)
+        - label: Touches crypto or key handling (needs two maintainer approvals)
+        - label: Would add threads, async, or clock syscalls to `meshcore` (breaks the sans-IO invariant)
+        - label: Pushes beyond the ~50–500 local-cluster scope
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

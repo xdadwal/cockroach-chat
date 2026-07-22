@@ -10,7 +10,9 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+# Set by the highest MSRV in the resolved tree (zeroize, clap, getrandom, base64ct all need 1.85).
+# CI enforces this; raise it only when a dependency actually forces it.
+rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/xdadwal/cockroach-chat"
 

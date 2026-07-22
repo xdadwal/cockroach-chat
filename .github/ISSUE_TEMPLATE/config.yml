@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/xdadwal/cockroach-chat/security/advisories/new
+    about: Report privately — never in a public issue. See SECURITY.md.
+  - name: 💬 Questions and ideas
+    url: https://github.com/xdadwal/cockroach-chat/discussions
+    about: For open-ended discussion that isn't yet a bug or a concrete proposal.

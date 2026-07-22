@@ -1,0 +1,22 @@
+# Review ownership. See GOVERNANCE.md — the paths below need two maintainer approvals,
+# because a subtle bug in them hurts users who have no way to detect it.
+
+* @xdadwal
+
+# Protocol core: wire format, crypto, relay, rate limiting.
+/crates/meshcore/            @xdadwal
+/crates/meshcore-store/      @xdadwal
+/crates/meshcore-ffi/        @xdadwal
+
+# Normative spec + the golden vectors CI diffs against.
+/docs/protocol.md            @xdadwal
+/testvectors/                @xdadwal
+
+# Key handling and the BLE transport.
+/android/app/src/main/java/chat/cockroach/KeyVault.kt   @xdadwal
+/android/app/src/main/java/chat/cockroach/ble/          @xdadwal
+
+# Security-relevant docs and the release pipeline.
+/SECURITY.md                 @xdadwal
+/docs/threat-model.md        @xdadwal
+/.github/workflows/          @xdadwal

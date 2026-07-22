@@ -9,8 +9,19 @@ blackouts. Named for the thing that survives when the lights go out.
 Every phone is both a client and a relay. Messages hop phone-to-phone across a dense crowd, so
 the network exists only as long as people's radios are on — and it belongs to no one.
 
-> **Status: 🚧 In active development.** Validated on Android hardware (Galaxy S23 ↔ OnePlus).
-> iOS not started; **not yet security-audited** — don't bet a life on it yet.
+> ## ⚠️ NOT AUDITED — do not rely on this where your safety depends on it
+>
+> This software has had **no external security audit**. The crypto is vetted (Noise via `snow`,
+> ed25519-dalek, SQLCipher) and there is a written threat model, but nobody independent has
+> reviewed the result. It also **cannot make you anonymous over the air** — a co-located radio
+> observer can correlate timing and signal strength no matter what we encrypt.
+>
+> **Read [`docs/threat-model.md`](docs/threat-model.md) before trusting this with anything.**
+> An external audit before we promote it for real protest use is a commitment, not an aspiration.
+
+**Status: 🚧 In active development.** Validated on Android hardware (Galaxy S23 ↔ OnePlus);
+iOS not started. Built in the open — see [contributing](CONTRIBUTING.md) and the
+[threat model](docs/threat-model.md).
 
 ---
 
@@ -151,14 +162,47 @@ Real BLE needs a **physical phone** (emulators have no Bluetooth radio).
 | `docs/PROGRESS.md` | Live build ledger — what's done, what's next. |
 | `docs/protocol.md` | Normative wire format. |
 | `docs/PERFORMANCE.md` | Performance backlog and tuning notes. |
+| `docs/threat-model.md` | **What this protects against — and what it doesn't.** Read first. |
 | `docs/research-brief.md` | The constraints and prior-art lessons everything is built on. |
 | `docs/decisions/` | Architecture decision records. |
+| `docs/ai-build-loop.md` | The agent prompt this was built with (see below). |
+
+---
+
+## How this was built
+
+Most of this codebase was written by an AI agent running an iterative build loop — the prompt that
+drove it is in [`docs/ai-build-loop.md`](docs/ai-build-loop.md), and `docs/PROGRESS.md` is the
+resulting task-by-task ledger.
+
+That's worth stating plainly rather than leaving you to guess, because it should change how you read
+the code. Every change was gated on `cargo test --workspace`, `cargo clippy -- -D warnings`, and the
+deterministic simulator scenarios, and the BLE and UI work was verified on physical phones — but
+**this has had far fewer human eyes on it than a security tool deserves.** That is precisely why
+the threat model is blunt, why unaudited is stated loudly, and why review contributions are the most
+valuable thing anyone can offer right now.
+
+---
+
+## Contributing
+
+Contributions are very welcome — especially **security review**, **hardware reports** from device
+combinations we don't own, and **iOS**.
+
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, the project invariants, how to run the simulator
+- [`GOVERNANCE.md`](GOVERNANCE.md) — how decisions get made, how to become a maintainer
+- [`SECURITY.md`](SECURITY.md) — **report vulnerabilities privately**, never in a public issue
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+
+Good first issues are labelled [`good first issue`](https://github.com/xdadwal/cockroach-chat/labels/good%20first%20issue);
+several come straight out of [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
 ---
 
 ## License
 
-See [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE). Bundled fonts and dependencies carry their own terms; see
+[`NOTICE.md`](NOTICE.md).
 
 <br>
 

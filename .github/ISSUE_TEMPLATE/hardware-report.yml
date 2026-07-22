@@ -1,0 +1,72 @@
+name: 📱 Hardware report
+description: Tell us how the mesh behaved on your phones — including when it didn't work
+title: "[hardware] "
+labels: ["hardware-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        BLE behaviour varies wildly across manufacturers and Android versions, and we can only test
+        the handful of phones we own. **Reports that it did *not* work are just as valuable as
+        reports that it did** — please file either.
+
+        Not a bug in a specific feature? Still file this. Raw observations are useful.
+
+  - type: input
+    id: devices
+    attributes:
+      label: Devices
+      description: Both ends of the link — model, Android version, and OEM skin if you know it.
+      placeholder: "Galaxy S23 (Android 14, One UI 6.1) ↔ Pixel 6a (Android 15, stock)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: What happened?
+      options:
+        - Worked as expected
+        - Worked, but unreliably or slowly
+        - Connected, but no messages got through
+        - Never discovered or connected
+        - Crashed
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What did you do and what did you see?
+      description: Rough steps are fine. Airplane mode on? How far apart? How many phones?
+      placeholder: |
+        Both phones in airplane mode with Bluetooth on, ~3 m apart, same room.
+        Sent to #general from the S23; the Pixel showed it after roughly 4 s.
+        Backgrounded the S23 and the next message never arrived.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version or commit
+      placeholder: "v0.1 / commit a725e0c"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logcat (optional)
+      description: |
+        `adb logcat | grep -i "cockroach\|BluetoothGatt"`. Status-133 loops and GATT errors are
+        especially useful.
+
+        **Scrub anything identifying before pasting.** Don't post key material or fingerprints.
+      render: shell
+
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: Before submitting
+      options:
+        - label: I removed identifying information (key fingerprints, names, locations) from anything I pasted.
+          required: true
