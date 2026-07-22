@@ -104,7 +104,16 @@ pub struct MeshNode<T: Transport, C: Clock, S: Store> {
     /// Ciphertexts that arrived before the session was ready (a DM can overtake the final
     /// handshake message over a relay); drained when the session completes.
     pending_inbound_dms: HashMap<Fingerprint, Vec<Vec<u8>>>,
+    /// Initiator handshake retry bookkeeping: last (re)send time and attempt count per peer. The
+    /// recipient may not have had our announce when our first handshake landed (they'd drop it with
+    /// no way to ask again), so we re-drive stalled handshakes from `tick` until they complete.
+    handshake_last_ms: HashMap<Fingerprint, Millis>,
+    handshake_attempts: HashMap<Fingerprint, u32>,
 }
+
+/// How long to wait before re-sending a stalled initiator handshake, and how many times to try.
+const DM_HANDSHAKE_RETRY_MS: Millis = 2000;
+const DM_HANDSHAKE_MAX_ATTEMPTS: u32 = 12;
 
 impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
     pub fn new(
@@ -140,6 +149,8 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             fp_to_eph: HashMap::new(),
             peer_static_dh: HashMap::new(),
             pending_inbound_dms: HashMap::new(),
+            handshake_last_ms: HashMap::new(),
+            handshake_attempts: HashMap::new(),
         }
     }
 
@@ -265,6 +276,11 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             .push(text.to_string());
         if !self.noise_sessions.contains_key(&peer_fp) {
             self.begin_handshake(peer_fp);
+        } else {
+            // A handshake is already in flight but not yet complete: a fresh user send resets the
+            // retry budget so `tick` re-drives it promptly instead of waiting out the old backoff.
+            self.handshake_attempts.remove(&peer_fp);
+            self.handshake_last_ms.remove(&peer_fp);
         }
     }
 
@@ -274,6 +290,31 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         let mut p = self.peer_or_new(fp);
         p.verified = true;
         self.store.upsert_peer(p);
+    }
+
+    /// Establish an encrypted session with a peer WITHOUT sending a message. Called right after
+    /// in-person verification so the other device flips to "verified" immediately (the completed
+    /// Noise session emits a `DmSession` on both ends), before any chat is exchanged.
+    pub fn start_dm_session(&mut self, peer_fp: Fingerprint) {
+        let ready = self
+            .noise_sessions
+            .get(&peer_fp)
+            .map(|s| s.is_ready())
+            .unwrap_or(false);
+        if ready {
+            // Already established — re-surface it so the UI reflects the verified state.
+            self.events.push(MeshEvent::DmSession {
+                peer_fp,
+                verified: true,
+            });
+            return;
+        }
+        if !self.fp_to_eph.contains_key(&peer_fp) {
+            return; // not reachable yet; verification is still recorded locally
+        }
+        if !self.noise_sessions.contains_key(&peer_fp) {
+            self.begin_handshake(peer_fp);
+        }
     }
 
     /// Set (or clear, if empty) a local petname for a peer. Persisted.
@@ -315,6 +356,8 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         self.fp_to_eph.clear();
         self.peer_static_dh.clear();
         self.pending_inbound_dms.clear();
+        self.handshake_last_ms.clear();
+        self.handshake_attempts.clear();
         self.events.clear();
     }
 
@@ -336,6 +379,8 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         };
         self.noise_sessions.insert(peer_fp, session);
         self.send_directed(MsgType::NoiseHandshake, peer_fp, msg);
+        self.handshake_last_ms.insert(peer_fp, self.clock.now_ms());
+        *self.handshake_attempts.entry(peer_fp).or_insert(0) += 1;
     }
 
     fn handle_noise_handshake(&mut self, pkt: &Packet) {
@@ -414,12 +459,16 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         if !bound {
             self.noise_sessions.remove(&fp);
             self.pending_dms.remove(&fp);
+            self.handshake_last_ms.remove(&fp);
+            self.handshake_attempts.remove(&fp);
             self.events.push(MeshEvent::DmSession {
                 peer_fp: fp,
                 verified: false,
             });
             return;
         }
+        self.handshake_last_ms.remove(&fp);
+        self.handshake_attempts.remove(&fp);
         self.events.push(MeshEvent::DmSession {
             peer_fp: fp,
             verified: true,
@@ -554,8 +603,42 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         }
         self.seen.evict_expired(now);
         self.reassembler.evict_expired(now);
+        self.retry_stalled_handshakes(now);
         // Simple fixed cadence; a later refinement can compute the true next deadline.
         250
+    }
+
+    /// Re-drive Noise handshakes that have outbound DMs queued but haven't completed — the recipient
+    /// may not have held our announce when our first handshake arrived (and would silently drop it).
+    fn retry_stalled_handshakes(&mut self, now: Millis) {
+        // Iterate every handshake we initiated (has an attempt count) — this covers both queued-DM
+        // handshakes and message-less sessions started right after verification.
+        let stalled: Vec<Fingerprint> = self
+            .handshake_attempts
+            .keys()
+            .copied()
+            .filter(|fp| {
+                let ready = self
+                    .noise_sessions
+                    .get(fp)
+                    .map(|s| s.is_ready())
+                    .unwrap_or(false);
+                if ready || !self.fp_to_eph.contains_key(fp) {
+                    return false;
+                }
+                if self.handshake_attempts.get(fp).copied().unwrap_or(0) >= DM_HANDSHAKE_MAX_ATTEMPTS {
+                    return false;
+                }
+                let last = self.handshake_last_ms.get(fp).copied().unwrap_or(0);
+                now.saturating_sub(last) >= DM_HANDSHAKE_RETRY_MS
+            })
+            .collect();
+        for fp in stalled {
+            // Restart the XX exchange cleanly (a fresh initiator message); the responder recreates
+            // its half on the next first-message it can identify.
+            self.noise_sessions.remove(&fp);
+            self.begin_handshake(fp);
+        }
     }
 
     // --- internals ---
@@ -989,6 +1072,122 @@ mod tests {
             evs.iter()
                 .any(|e| matches!(e, MeshEvent::PeerAppeared { .. })),
             "b should have learned a's identity, got {evs:?}"
+        );
+    }
+
+    /// Drain (and clear) a node's captured outbound frames.
+    fn drain(n: &MeshNode<RecordingTransport, ManualClock, MemoryStore>) -> Vec<Vec<u8>> {
+        let mut s = n.transport.sent.borrow_mut();
+        let out: Vec<Vec<u8>> = s.iter().map(|(_, f)| f.clone()).collect();
+        s.clear();
+        out
+    }
+
+    /// Regression: a DM must still deliver when the recipient hadn't yet learned the sender's
+    /// announce at the moment the first Noise handshake arrived (they'd drop it, with no way to ask
+    /// again). The initiator re-drives the handshake from `tick` until it completes.
+    #[test]
+    fn dm_retries_until_recipient_learns_sender() {
+        let mut a = node(1);
+        let mut b = node(2);
+        a.on_transport_event(TransportEvent::LinkUp { link: 1, mtu: 182, peer_hint: None });
+        b.on_transport_event(TransportEvent::LinkUp { link: 1, mtu: 182, peer_hint: None });
+
+        // A learns B (deliver B's announce to A) — but B is NOT told about A yet.
+        for f in drain(&b) {
+            a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        let b_fp = a
+            .take_events()
+            .iter()
+            .find_map(|e| match e {
+                MeshEvent::PeerAppeared { fingerprint, .. } => Some(*fingerprint),
+                _ => None,
+            })
+            .expect("A should have learned B's identity");
+        let _ = drain(&a); // discard A's own announce so B stays ignorant of A
+
+        // A sends a DM: it begins the handshake. B receives it but can't identify A → drops it.
+        a.send_dm(b_fp, "north gate clear");
+        for f in drain(&a) {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        assert!(
+            !b.take_events().iter().any(|e| matches!(e, MeshEvent::DmReceived { .. })),
+            "B can't decrypt a DM from a sender it hasn't learned yet"
+        );
+
+        // Now B learns A (A's announce finally propagates).
+        a.announce();
+        for f in drain(&a) {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        let _ = b.take_events();
+
+        // Advance past the retry interval and tick A: it re-drives the handshake. Shuttle frames
+        // both ways to completion.
+        a.clock.advance(DM_HANDSHAKE_RETRY_MS + 1);
+        a.tick();
+        for _ in 0..8 {
+            for f in drain(&a) {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in drain(&b) {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+        }
+
+        assert!(
+            b.take_events().iter().any(
+                |e| matches!(e, MeshEvent::DmReceived { text, .. } if text == "north gate clear")
+            ),
+            "the retried handshake should deliver the DM once B has learned A"
+        );
+    }
+
+    /// Verifying a peer starts a message-less session so both ends flip to a bound `DmSession`
+    /// immediately — no chat message required, and none is delivered.
+    #[test]
+    fn start_dm_session_binds_both_ends_without_a_message() {
+        let mut a = node(1);
+        let mut b = node(2);
+        a.on_transport_event(TransportEvent::LinkUp { link: 1, mtu: 182, peer_hint: None });
+        b.on_transport_event(TransportEvent::LinkUp { link: 1, mtu: 182, peer_hint: None });
+        // Exchange announces both ways.
+        for f in drain(&a) {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        for f in drain(&b) {
+            a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        let b_fp = a
+            .take_events()
+            .iter()
+            .find_map(|e| match e {
+                MeshEvent::PeerAppeared { fingerprint, .. } => Some(*fingerprint),
+                _ => None,
+            })
+            .expect("A should have learned B");
+        let _ = b.take_events();
+
+        a.start_dm_session(b_fp);
+        for _ in 0..8 {
+            for f in drain(&a) {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in drain(&b) {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+        }
+
+        let b_evs = b.take_events();
+        assert!(
+            b_evs.iter().any(|e| matches!(e, MeshEvent::DmSession { verified: true, .. })),
+            "B should see a bound session (→ verified) purely from A verifying B"
+        );
+        assert!(
+            !b_evs.iter().any(|e| matches!(e, MeshEvent::DmReceived { .. })),
+            "no chat message should be delivered by starting a session"
         );
     }
 

@@ -109,6 +109,42 @@ no Bluetooth).
   - Fix landed during testing: messages first arrived "unverified" because the link-up announce was dropped during GATT setup; now the app re-announces every ~3s so keys always propagate. (commit 80a6cd0)
   - Remaining polish (not blocking): full **bidirectional** verify needs both phones on the post-fix APK; **dedupe redundant links** to one peer (both sides advertise+scan+connect → ~5 links); a **GATT op queue** so the link-up announce write doesn't race the CCCD write; airplane-mode run.
 
+- [x] **Always-on relay (foreground-service migration) — DONE & verified on S23.** The mesh
+  (node + `BleMeshTransport` + ticker) now lives in a **process-lifetime `BleController` singleton**
+  (`BleController.get`) with its own main-thread scope, kept alive by `MeshForegroundService`
+  (`connectedDevice`, ongoing "Mesh active" notification + Stop action). The Activity binds by
+  observing the same singleton's Compose state instead of owning the node in `lifecycleScope`, so
+  the relay **survives backgrounding and screen-lock**. Verified on-device: FGS `isForeground=true
+  types=0x10`; still scanning after HOME (17 scan hits/6 s backgrounded) and screen-off (7 hits).
+- [x] **Battery duty-cycling (v1) — DONE.** `BleMeshTransport` registers a screen on/off receiver:
+  screen-on → `SCAN_MODE_LOW_LATENCY` + `ADVERTISE_MODE_BALANCED`; screen-off → `SCAN_MODE_LOW_POWER`
+  + `ADVERTISE_MODE_LOW_POWER` (keeps relaying in-pocket without draining). Both transitions logged
+  and verified on S23. (Full 4-tier scheme incl. battery-level + link-count remains an M6 target.)
+- [x] **FLAG_SECURE — DONE.** `MainActivity` sets `FLAG_SECURE` (blocks screenshots + hides the
+  recents thumbnail). Verified: app window `fl=0x81812100` has the `0x2000` secure bit set.
+- [x] **Panic-wipe button — DONE.** "Wipe" button in the live header → confirm dialog →
+  `MeshForegroundService.panic` → `BleController.panicWipe` (`node.panic_wipe` clears the encrypted
+  DB rows, then `KeyVault.wipe` destroys the hardware-wrapped key + deletes DB files = unrecoverable
+  ciphertext) → service tears down. Path compiles + wired; not destructively run on-device (would
+  erase the test identity). Duress-wipe / notification scrubbing remain M6.
+
+- [x] **UI/UX redesign (design-system implementation) — DONE & verified on emulator.** Rebuilt the
+  whole Android surface from the "Cockroach Chat" Claude Design project (imported via the
+  `claude_design` MCP): warm near-black palette + paper-cream ink, Archivo (voice) / JetBrains Mono
+  (fact) variable fonts bundled in `res/font`, and the full trust-badge language (signed/unverified
+  per message; verified/not-met per peer; public-square vs E2E banners; no-false-confidence rule).
+  New IA: bottom nav `FEED · PEOPLE · MAP · ME` with a three-tab feed `Announce / Nearby / Verified`.
+  Screens: onboarding name, mesh-off/start, live shell, channel view, people, encrypted DM,
+  in-person verification (QR + deterministic 4-word safety number + petname + mismatch), identity +
+  hold-to-wipe panic, mesh status, offline-map placeholder (parked). Files: `ui/Theme.kt`,
+  `ui/Components.kt`, `ui/App.kt`; `BleController` extended with the Announce (1/min throttle +
+  cooldown), Nearby channels (`joinChannel`/channel-tagged events), persisted display name, and
+  safety-number model. **No native rebuild** — all mapped onto the existing core (`FfiEvent.Message`
+  already carries `channel`). Loopback demo dropped from the shipping UI. Verified on emulator: every
+  screen renders (fonts + native lib load, no crashes), onboarding→start→live works, Announce send
+  produced a signed bubble + the C3 cooldown card. Design source: claude.ai design project
+  `958b9a4d-…`. Not yet installed on the physical phones (both were disconnected during the build).
+
 Remaining M1 (SQLCipher store, iOS overflow-area filter) unchanged. See `docs/IMPLEMENTATION_PLAN.md` §M1.
 
 ## M2 — Relay live (multi-hop, store-and-forward) — *hardware-gated*  · see §M2

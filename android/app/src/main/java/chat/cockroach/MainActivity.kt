@@ -1,357 +1,38 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-
 package chat.cockroach
 
-import android.Manifest
-import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import com.google.zxing.BarcodeFormat
-import com.journeyapps.barcodescanner.BarcodeEncoder
-import com.journeyapps.barcodescanner.ScanContract
-import com.journeyapps.barcodescanner.ScanOptions
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.lifecycle.lifecycleScope
+import androidx.core.view.WindowCompat
+import chat.cockroach.ui.CcBase
+import chat.cockroach.ui.CockroachApp
+import chat.cockroach.ui.CockroachTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val loopback = MeshController(lifecycleScope).also { it.start() }
-        val ble = BleController(this, lifecycleScope)
+        // Block screenshots + hide from the recents thumbnail (shoulder-surf / seizure defense).
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        // Draw edge-to-edge so we can inset content ourselves (keeps the composer above the keyboard).
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        // Shared, process-lifetime controller — the foreground service keeps its mesh alive when we're
+        // backgrounded; this Activity only observes/commands it.
+        val ble = BleController.get(this)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
-                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    App(loopback, ble)
+            CockroachTheme {
+                Surface(Modifier.fillMaxSize(), color = CcBase) {
+                    // safeDrawing = status/nav bars + IME: lifts the whole UI above the soft keyboard.
+                    Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                        CockroachApp(ble)
+                    }
                 }
             }
-        }
-    }
-}
-
-private enum class Mode { BLE, LOOPBACK }
-
-@Composable
-private fun App(loopback: MeshController, ble: BleController) {
-    var mode by remember { mutableStateOf(Mode.BLE) }
-    Column(Modifier.fillMaxSize().padding(12.dp)) {
-        Text("Cockroach Chat", fontSize = 22.sp, color = MaterialTheme.colorScheme.primary)
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-            SegmentedButton(
-                selected = mode == Mode.BLE,
-                onClick = { mode = Mode.BLE },
-                shape = SegmentedButtonDefaults.itemShape(0, 2),
-            ) { Text("Real BLE") }
-            SegmentedButton(
-                selected = mode == Mode.LOOPBACK,
-                onClick = { mode = Mode.LOOPBACK },
-                shape = SegmentedButtonDefaults.itemShape(1, 2),
-            ) { Text("Loopback demo") }
-        }
-        when (mode) {
-            Mode.BLE -> BleScreen(ble)
-            Mode.LOOPBACK -> LoopbackScreen(loopback)
-        }
-    }
-}
-
-// --- Real BLE ------------------------------------------------------------------------------------
-
-@Composable
-private fun BleScreen(ble: BleController) {
-    val permissions = remember {
-        buildList {
-            if (Build.VERSION.SDK_INT >= 31) {
-                add(Manifest.permission.BLUETOOTH_SCAN)
-                add(Manifest.permission.BLUETOOTH_CONNECT)
-                add(Manifest.permission.BLUETOOTH_ADVERTISE)
-            }
-            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-        }.toTypedArray()
-    }
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { result ->
-        val granted = result.filterKeys { it != Manifest.permission.POST_NOTIFICATIONS }.all { it.value }
-        if (granted) ble.startBle() else ble.log.add("BLE permissions denied")
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        Text(
-            "Runs the real Bluetooth-LE transport (advertise + scan + GATT). " +
-                "With a second phone running this app, they mesh over BLE — no internet.",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(6.dp))
-        if (!ble.running.value) {
-            Button(onClick = { launcher.launch(permissions) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Start BLE mesh")
-            }
-            ThreadCard("📱 ${Build.MODEL} · #general", ble.messages, Modifier.weight(1f), enabled = false) {}
-        } else {
-            // One shared identity QR (your fingerprint is the same for everyone).
-            var showMyQr by remember { mutableStateOf(false) }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "● live — eph ${ble.ephId.value.take(8)}",
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedButton(onClick = { showMyQr = true }) { Text("My QR") }
-            }
-            if (showMyQr) MyQrDialog(ble.myFingerprint()) { showMyQr = false }
-
-            // Selector: the public channel, or an encrypted DM thread with a discovered peer.
-            var selected by remember { mutableStateOf<String?>(null) }
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                SelectChip("# general", selected == null) { selected = null }
-                ble.peers.forEach { p ->
-                    SelectChip(p.name + if (p.verified) " ✓" else "", selected == p.fp) { selected = p.fp }
-                }
-            }
-
-            val sel = selected
-            if (sel == null) {
-                ThreadCard("📱 ${Build.MODEL} · #general", ble.messages, Modifier.weight(1f)) { ble.send(it) }
-            } else {
-                val peer = ble.peers.firstOrNull { it.fp == sel }
-                val name = peer?.name ?: sel.take(8)
-                VerifyBar(
-                    peerFp = sel,
-                    verified = peer?.verified == true,
-                    petname = name,
-                    onSetPetname = { ble.setPetname(sel, it) },
-                    onVerified = { ble.verify(sel) },
-                )
-                ThreadCard("🔒 encrypted DM · $name", ble.thread(sel), Modifier.weight(1f)) { ble.sendDm(sel, it) }
-            }
-        }
-        StatusStrip("BLE log", ble.log)
-    }
-}
-
-@Composable
-private fun ThreadCard(
-    title: String,
-    messages: List<ChatMessage>,
-    modifier: Modifier,
-    enabled: Boolean = true,
-    onSend: (String) -> Unit,
-) {
-    Card(modifier.fillMaxWidth().padding(top = 8.dp)) {
-        Column(Modifier.padding(8.dp)) {
-            Text(title, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(messages) { Bubble(it) }
-            }
-            var draft by remember(title) { mutableStateOf("") }
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                placeholder = { Text("message…") },
-                singleLine = true,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Button(
-                onClick = { onSend(draft); draft = "" },
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            ) { Text("Send") }
-        }
-    }
-}
-
-@Composable
-private fun VerifyBar(
-    peerFp: String,
-    verified: Boolean,
-    petname: String,
-    onSetPetname: (String) -> Unit,
-    onVerified: () -> Unit,
-) {
-    var name by remember(peerFp) { mutableStateOf(petname) }
-    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
-        val scanned = result.contents
-        if (scanned != null && scanned.equals(peerFp, ignoreCase = true)) onVerified()
-    }
-    Row(
-        Modifier.fillMaxWidth().padding(top = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it; onSetPetname(it) },
-            placeholder = { Text("petname") },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-        )
-        // Per-peer action: scan their QR to verify; disabled once verified.
-        Button(
-            onClick = {
-                scanLauncher.launch(
-                    ScanOptions()
-                        .setPrompt("Scan their fingerprint QR")
-                        .setBeepEnabled(false)
-                        .setOrientationLocked(false)
-                )
-            },
-            enabled = !verified,
-        ) { Text(if (verified) "✓ Verified" else "Verify") }
-    }
-}
-
-@Composable
-private fun MyQrDialog(myFingerprint: String, onDismiss: () -> Unit) {
-    val qr = remember(myFingerprint) {
-        runCatching {
-            BarcodeEncoder().encodeBitmap(myFingerprint, BarcodeFormat.QR_CODE, 512, 512).asImageBitmap()
-        }.getOrNull()
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("My fingerprint") },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Have them scan this.", fontSize = 12.sp)
-                Spacer(Modifier.height(8.dp))
-                qr?.let {
-                    Image(bitmap = it, contentDescription = "my fingerprint QR", modifier = Modifier.size(200.dp))
-                }
-                Text(
-                    myFingerprint.take(16) + "…",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
-        confirmButton = { Button(onClick = onDismiss) { Text("Done") } },
-    )
-}
-
-@Composable
-private fun SelectChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-    val fg = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(bg)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-    ) {
-        Text(label, fontSize = 12.sp, color = fg)
-    }
-}
-
-// --- Loopback demo -------------------------------------------------------------------------------
-
-@Composable
-private fun LoopbackScreen(mesh: MeshController) {
-    Column(Modifier.fillMaxSize()) {
-        Text(
-            "Two mesh nodes (Rust core) chatting over a loopback stand-in for BLE",
-            fontSize = 12.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PhonePane("Ava", mesh.phoneA, Modifier.weight(1f)) { mesh.send(0, it) }
-            PhonePane("Ben", mesh.phoneB, Modifier.weight(1f)) { mesh.send(1, it) }
-        }
-        StatusStrip("mesh log", mesh.status)
-    }
-}
-
-@Composable
-private fun PhonePane(
-    name: String,
-    messages: List<ChatMessage>,
-    modifier: Modifier,
-    onSend: (String) -> Unit,
-) {
-    Card(modifier.fillMaxHeight()) {
-        Column(Modifier.padding(8.dp)) {
-            Text("📱 $name · #general", fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(4.dp))
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                items(messages) { Bubble(it) }
-            }
-            var draft by remember { mutableStateOf("") }
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                placeholder = { Text("message…") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Button(
-                onClick = { onSend(draft); draft = "" },
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-            ) { Text("Send") }
-        }
-    }
-}
-
-// --- shared --------------------------------------------------------------------------------------
-
-@Composable
-private fun Bubble(m: ChatMessage) {
-    val align = if (m.mine) Alignment.End else Alignment.Start
-    val bg = if (m.mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = align) {
-        Box(Modifier.background(bg, RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
-            Text(m.body, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-        }
-        if (!m.mine) {
-            Text(
-                if (m.verified) "✓ verified" else "unverified",
-                fontSize = 9.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun StatusStrip(label: String, status: List<String>) {
-    Spacer(Modifier.height(6.dp))
-    Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .height(110.dp)
-            .background(Color(0x22000000), RoundedCornerShape(6.dp))
-            .padding(6.dp)
-            .verticalScroll(rememberScrollState())
-    ) {
-        status.takeLast(12).forEach {
-            Text("· $it", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
