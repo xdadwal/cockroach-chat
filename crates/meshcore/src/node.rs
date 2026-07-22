@@ -626,7 +626,9 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
                 if ready || !self.fp_to_eph.contains_key(fp) {
                     return false;
                 }
-                if self.handshake_attempts.get(fp).copied().unwrap_or(0) >= DM_HANDSHAKE_MAX_ATTEMPTS {
+                if self.handshake_attempts.get(fp).copied().unwrap_or(0)
+                    >= DM_HANDSHAKE_MAX_ATTEMPTS
+                {
                     return false;
                 }
                 let last = self.handshake_last_ms.get(fp).copied().unwrap_or(0);
@@ -1090,8 +1092,16 @@ mod tests {
     fn dm_retries_until_recipient_learns_sender() {
         let mut a = node(1);
         let mut b = node(2);
-        a.on_transport_event(TransportEvent::LinkUp { link: 1, mtu: 182, peer_hint: None });
-        b.on_transport_event(TransportEvent::LinkUp { link: 1, mtu: 182, peer_hint: None });
+        a.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+        b.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
 
         // A learns B (deliver B's announce to A) — but B is NOT told about A yet.
         for f in drain(&b) {
@@ -1113,7 +1123,9 @@ mod tests {
             b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
         }
         assert!(
-            !b.take_events().iter().any(|e| matches!(e, MeshEvent::DmReceived { .. })),
+            !b.take_events()
+                .iter()
+                .any(|e| matches!(e, MeshEvent::DmReceived { .. })),
             "B can't decrypt a DM from a sender it hasn't learned yet"
         );
 
@@ -1151,8 +1163,16 @@ mod tests {
     fn start_dm_session_binds_both_ends_without_a_message() {
         let mut a = node(1);
         let mut b = node(2);
-        a.on_transport_event(TransportEvent::LinkUp { link: 1, mtu: 182, peer_hint: None });
-        b.on_transport_event(TransportEvent::LinkUp { link: 1, mtu: 182, peer_hint: None });
+        a.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+        b.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
         // Exchange announces both ways.
         for f in drain(&a) {
             b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
@@ -1182,11 +1202,15 @@ mod tests {
 
         let b_evs = b.take_events();
         assert!(
-            b_evs.iter().any(|e| matches!(e, MeshEvent::DmSession { verified: true, .. })),
+            b_evs
+                .iter()
+                .any(|e| matches!(e, MeshEvent::DmSession { verified: true, .. })),
             "B should see a bound session (→ verified) purely from A verifying B"
         );
         assert!(
-            !b_evs.iter().any(|e| matches!(e, MeshEvent::DmReceived { .. })),
+            !b_evs
+                .iter()
+                .any(|e| matches!(e, MeshEvent::DmReceived { .. })),
             "no chat message should be delivered by starting a session"
         );
     }
