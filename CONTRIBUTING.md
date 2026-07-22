@@ -72,8 +72,20 @@ cargo +nightly fuzz run wire_decode -- -max_total_time=60
 ```
 
 Targets: `wire_decode` (packet decoding plus an encode/decode round-trip), `frag_reassemble`
-(stateful reassembly with adversarial frame sequences), `decompress` (the zip-bomb caps). CI runs
-60 s per target on every PR and 20 minutes per target nightly.
+(stateful reassembly with adversarial frame sequences), `decompress` (the zip-bomb caps).
+
+**CI runs 60 s per target on pull requests and nothing else.** That catches a regression that
+crashes quickly; it does not find new bugs, and no corpus is kept between runs, so every CI run
+starts cold. Long runs are a deliberate manual step — if you're touching a parser, give it a real
+session locally:
+
+```bash
+cargo +nightly fuzz run wire_decode -- -max_total_time=3600
+```
+
+Your `corpus/` directory persists locally between runs and is what makes successive runs go
+deeper, so it's worth keeping around. Report anything it finds via
+[`SECURITY.md`](SECURITY.md), not a public issue.
 
 **If you add or change a parser, add a fuzz target for it.**
 

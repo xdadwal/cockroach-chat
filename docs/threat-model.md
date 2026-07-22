@@ -72,11 +72,14 @@ document. **Metadata is the risk.** Radio presence is metadata we cannot fully h
   a 30 s idle timeout; per-sender rate limits with a 60 s greylist, applied network-wide because
   relayed copies carry the origin's id; seen-cache dedup on a TTL-independent digest. The
   `malicious_flooder`, `duplicate_storm`, and `zipbomb_rejected` simulator scenarios cover these.
-  The parsers are fuzzed (`crates/meshcore/fuzz`): `wire_decode`, `frag_reassemble`, and
-  `decompress`, run 60 s per target on every PR and 20 minutes per target nightly.
-- **Residual risk:** fuzzing has so far accumulated hours, not the weeks that make absence of
-  crashes meaningful — M6 sets the bar at ≥8 h clean per target and we are not there. The targets
-  also only cover the three parsers named above; the Noise handshake and the store are not fuzzed.
+  Fuzz targets exist for the three parsers (`crates/meshcore/fuzz`): `wire_decode`,
+  `frag_reassemble`, and `decompress`.
+- **Residual risk:** those targets run **60 s each on pull requests and nowhere else**. There is no
+  scheduled long-running fuzz job and no corpus is carried between runs, so CI catches regressions
+  that crash quickly — it does not search for new bugs. Sustained fuzzing happens only when someone
+  runs it by hand. M6 sets the bar at ≥8 h clean per target and we are nowhere near it. The Noise
+  handshake and the store have no targets at all. **Treat "the parsers are fuzzed" as a statement
+  about tooling that exists, not about assurance that has been earned.**
   A determined attacker with several radios can still degrade a local cell regardless; BLE airtime
   is finite and no protocol fixes that.
 

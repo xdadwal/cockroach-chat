@@ -17,8 +17,10 @@ called out here under **Protocol**, because two phones on different protocol ver
   `NOTICE.md`, issue and PR templates.
 - SIL Open Font License texts for the bundled Archivo and JetBrains Mono fonts, shipped inside the
   APK under `assets/licenses/` as the OFL requires.
-- CI jobs for Android (build, lint, unit tests), dependency audit (`cargo-deny`), and MSRV.
-  Dependabot for cargo, gradle, and github-actions.
+- CI jobs for Android (build, lint, unit tests), dependency audit (`cargo-deny`), MSRV, and a
+  60 s-per-target fuzz smoke run. Dependabot for cargo, gradle, and github-actions.
+- Fuzz targets for the three parsers (`wire_decode`, `frag_reassemble`, `decompress`), closing a
+  claim `docs/IMPLEMENTATION_PLAN.md` had been making without them existing.
 - Tag-triggered release workflow producing a signed APK with `SHA256SUMS`.
 - First Android unit test: en/hi `String.format` specifier parity.
 

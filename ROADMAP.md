@@ -39,8 +39,10 @@ store-takedown hedge.
 ## Before anyone should rely on this
 
 - **External security audit.** Non-negotiable before we promote this for real protest use.
-- **Sustained fuzzing.** Targets exist for the three parsers and run in CI, but M6's bar is ≥8 h
-  clean per target, and the Noise handshake and store aren't covered yet.
+- **Sustained fuzzing.** Targets exist for the three parsers, but CI only runs them 60 s each on
+  PRs — that's regression detection, not a search for new bugs. Nothing runs them for long, and no
+  corpus is kept between runs. M6's bar is ≥8 h clean per target; the Noise handshake and store
+  have no targets at all.
 - **Reproducible builds**, so a release binary can be verified against source rather than trusted.
 
 See [`docs/threat-model.md`](docs/threat-model.md) for what is and isn't defended today.

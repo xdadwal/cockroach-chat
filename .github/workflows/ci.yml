@@ -77,8 +77,10 @@ jobs:
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
 
-      # A short smoke run per target — enough to catch an obvious regression on a PR without
-      # holding it up. Real coverage comes from the nightly job below.
+      # A short smoke run per target: enough to catch a regression that crashes quickly, and
+      # deliberately nothing more. There is no scheduled long-running fuzz job, and no corpus is
+      # persisted between runs, so this finds regressions rather than new bugs. Sustained fuzzing
+      # is a manual step — see CONTRIBUTING.md.
       - name: Fuzz the parsers
         working-directory: crates/meshcore/fuzz
         # `+nightly` is required, not decorative: rust-toolchain.toml at the repo root pins stable
