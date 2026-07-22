@@ -61,8 +61,11 @@ Vulnerability handling follows [`SECURITY.md`](SECURITY.md). Embargoed fixes may
 privately and merged with less public discussion than usual; the reasoning gets published with the
 advisory once it's out.
 
-The commitment to an external audit before promoting this for real protest use is not something a
-maintainer can quietly drop. Changing it requires an issue and a written rationale.
+The project ships for field use before an audit exists, which puts the weight on being honest about
+limits instead. Two things follow, and neither is a maintainer's to quietly drop: the commitment to
+an external audit stands, and **the app must never claim more certainty than it has** — no implied
+delivery, no implied anonymity, no verified badge without a real verification. Weakening either
+requires an issue and a written rationale.
 
 ## Forking
 

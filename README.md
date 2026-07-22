@@ -9,15 +9,24 @@ blackouts. Named for the thing that survives when the lights go out.
 Every phone is both a client and a relay. Messages hop phone-to-phone across a dense crowd, so
 the network exists only as long as people's radios are on — and it belongs to no one.
 
-> ## ⚠️ NOT AUDITED — do not rely on this where your safety depends on it
+> ## ⚠️ Under active development — and unaudited
 >
-> This software has had **no external security audit**. The crypto is vetted (Noise via `snow`,
-> ed25519-dalek, SQLCipher) and there is a written threat model, but nobody independent has
-> reviewed the result. It also **cannot make you anonymous over the air** — a co-located radio
-> observer can correlate timing and signal strength no matter what we encrypt.
+> This app is meant to be used in the field, and we'd rather it be in your hands than withheld.
+> Use it knowing three things:
 >
-> **Read [`docs/threat-model.md`](docs/threat-model.md) before trusting this with anything.**
-> An external audit before we promote it for real protest use is a commitment, not an aspiration.
+> **It may not work as expected.** Especially in dense crowds, heavy interference or jamming, on
+> low battery, or on Android builds we've never seen. Delivery is best-effort — a message that
+> looks sent may never arrive. **Always have a fallback that doesn't depend on this app.**
+>
+> **It cannot make you anonymous.** Encryption protects what you say, not the fact that a radio
+> near you is speaking. A co-located observer can correlate timing and signal strength no matter
+> what we encrypt.
+>
+> **The crypto is unaudited.** The libraries are vetted (Noise via `snow`, ed25519-dalek,
+> SQLCipher) and there's a written threat model, but nobody independent has reviewed how we put
+> them together.
+>
+> **Read [`docs/threat-model.md`](docs/threat-model.md) before deciding this fits your situation.**
 
 **Status: 🚧 In active development. Android only.** Validated on Android hardware
 (Galaxy S23 ↔ OnePlus). Built in the open — see [contributing](CONTRIBUTING.md) and the
@@ -123,7 +132,10 @@ simulator. The native shell owns only the BLE radio and the screen.
   is relaying; the UI is honest that screen-on carries the mesh.
 - **Public channels are public.** Anyone in radio range reads them — there is no lock, ever.
 - **Not yet audited.** The crypto is vetted (Noise via `snow`, ed25519-dalek, SQLCipher), but this
-  has **not** had an external security audit. Don't bet a life on it yet.
+  has **not** had an external security audit.
+- **Delivery is best-effort.** No acknowledgements, no guaranteed ordering, no retry forever. A
+  message that looks sent may never arrive, and under interference or jamming the mesh may not work
+  at all. Never treat "sent" as "delivered" for anything that matters.
 
 See `docs/research-brief.md` for the constraints and prior-art lessons everything is built on.
 

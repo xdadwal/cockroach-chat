@@ -6,8 +6,12 @@ Cockroach Chat has **not had an external security audit**. It implements cryptog
 Ed25519, X25519, SQLCipher) using vetted libraries rather than hand-rolled primitives, and it has a
 written [threat model](docs/threat-model.md) — but nobody independent has reviewed the result.
 
-**Do not rely on this software where your safety depends on it.** An external audit before we
-promote it for real-world protest use is a commitment, not an aspiration.
+The app is built to be used in the field, and shipping it beats withholding it — but it is under
+active development and **may not work as expected**, particularly under the conditions it exists
+for: dense crowds, interference, jamming, low battery, unfamiliar hardware. Delivery is
+best-effort. Keep a fallback that doesn't depend on it.
+
+An external audit is a commitment we intend to keep, not a box already ticked.
 
 Read [`docs/threat-model.md`](docs/threat-model.md) before deciding this is appropriate for your
 situation. It is explicit about what is *not* defended: over-the-air anonymity, traffic analysis,

@@ -146,9 +146,23 @@ Stated plainly, because a security tool that is vague here is lying:
 
 ## If your safety depends on this
 
-Don't rely on it yet. The software is unaudited, the parsers are not fuzzed, and the metadata
-exposure in A1 is inherent to broadcast radio rather than a bug we can fix. Use tools that have been
-audited and have a track record. Revisit this document after an external audit exists.
+Use it, but plan around it failing.
+
+The app is meant for the field and we'd rather you have it than not — but it is under active
+development, the crypto is unaudited, fuzzing is shallow, and the metadata exposure in A1 is
+inherent to broadcast radio rather than a bug we can fix. Under the conditions this exists for —
+crowds, interference, jamming, a dying battery — it may simply not work, and it cannot always tell
+you that it didn't.
+
+Concretely:
+
+- **Never treat "sent" as "delivered"** for anything that matters. Confirm out of band.
+- **Assume transmitting is observable.** Nothing here hides that a radio near you is speaking.
+- **Verify in person** before trusting a DM's identity. Unverified means unverified.
+- **Keep a fallback** — a meeting point, a time, a person — that needs no working phone.
+- Where an audited tool with a track record fits your situation, prefer it.
+
+Revisit this document after an external audit exists; it will say something different.
 
 ## Reporting
 

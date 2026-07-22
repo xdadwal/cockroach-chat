@@ -91,9 +91,12 @@ jobs:
             cockroach-chat-*.apk
             SHA256SUMS
           body: |
-            > **NOT AUDITED.** This software has had no external security audit and cannot make you
-            > anonymous over the air. Read [the threat model](https://github.com/xdadwal/cockroach-chat/blob/master/docs/threat-model.md)
-            > before relying on it for anything that matters.
+            > **Under active development, and unaudited.** It may not work as expected — least of
+            > all in dense crowds, interference or jamming. Delivery is best-effort, so never treat
+            > "sent" as "delivered", and keep a fallback that doesn't need this app. It also cannot
+            > make you anonymous over the air.
+            > Read [the threat model](https://github.com/xdadwal/cockroach-chat/blob/master/docs/threat-model.md)
+            > before deciding it fits your situation.
 
             ### Verify what you downloaded
 
