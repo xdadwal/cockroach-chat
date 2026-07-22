@@ -15,10 +15,11 @@ never in a public issue.
    across OEMs and Android versions. If you have two phones and ten minutes, file a
    [hardware report](https://github.com/xdadwal/cockroach-chat/issues/new?template=hardware-report.yml) —
    including "it didn't work," which is more useful than silence.
-3. **iOS.** Not started. The Rust core is built to drop in. This is a big, well-defined,
-   high-impact piece of work if you know CoreBluetooth.
-4. **The performance backlog.** [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) is a written,
+3. **The performance backlog.** [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) is a written,
    prioritised list — several items are self-contained and make good first contributions.
+
+**Not looking for iOS work right now.** The project is Android-only and iOS is deferred — please
+don't start a CoreBluetooth port expecting it to be merged. See [`ROADMAP.md`](ROADMAP.md).
 
 ## Project invariants
 

@@ -19,8 +19,8 @@ the network exists only as long as people's radios are on — and it belongs to 
 > **Read [`docs/threat-model.md`](docs/threat-model.md) before trusting this with anything.**
 > An external audit before we promote it for real protest use is a commitment, not an aspiration.
 
-**Status: 🚧 In active development.** Validated on Android hardware (Galaxy S23 ↔ OnePlus);
-iOS not started. Built in the open — see [contributing](CONTRIBUTING.md) and the
+**Status: 🚧 In active development. Android only.** Validated on Android hardware
+(Galaxy S23 ↔ OnePlus). Built in the open — see [contributing](CONTRIBUTING.md) and the
 [threat model](docs/threat-model.md).
 
 ---
@@ -73,22 +73,19 @@ Proven on real hardware (Galaxy S23 ↔ OnePlus, airplane mode):
 (broadcast to 200 nodes, partition heal, duplicate-storm suppression, malicious-flooder
 containment, multi-hop relay, store-and-forward, DM handshake retry, and more).
 
-**iOS:** not started yet — the shared core is built to drop in (planned M5).
-
 ---
 
 ## How it works
 
-One protocol, one implementation, no cross-platform drift:
+The protocol lives in one place, so the platform shell owns only the radio and the screen:
 
 ```
-┌──────────────────────────────┐        ┌──────────────────────────────┐
-│  Android (Kotlin / Compose)  │        │        iOS (planned)         │
-│  BLE GATT radio · UI only    │        │  CoreBluetooth · UI only     │
-└───────────────┬──────────────┘        └───────────────┬──────────────┘
-                │            UniFFI  (meshcore-ffi)      │
-                └──────────────────┬────────────────────┘
-                                   ▼
+                ┌──────────────────────────────┐
+                │  Android (Kotlin / Compose)  │
+                │  BLE GATT radio · UI only    │
+                └───────────────┬──────────────┘
+                                │  UniFFI (meshcore-ffi)
+                                ▼
         ┌───────────────────────────────────────────────┐
         │   meshcore  — pure sans-IO Rust core           │
         │   wire codec · fragmentation · identity + PoW  │
@@ -100,7 +97,7 @@ One protocol, one implementation, no cross-platform drift:
 
 The core is **sans-IO**: no threads, no sockets, no clock syscalls. Time, transport, and storage
 are injected, which is what makes hundreds of virtual nodes replayable in a deterministic
-simulator. The native shells own only the BLE radio and the screen.
+simulator. The native shell owns only the BLE radio and the screen.
 
 ### Repo layout
 
@@ -108,7 +105,7 @@ simulator. The native shells own only the BLE radio and the screen.
 |---|---|
 | `crates/meshcore` | The protocol/crypto/mesh core (sans-IO, no platform deps). |
 | `crates/meshcore-store` | SQLCipher-backed encrypted persistence (`Store` trait). |
-| `crates/meshcore-ffi` | UniFFI wrapper → Kotlin/Swift bindings. |
+| `crates/meshcore-ffi` | UniFFI wrapper → Kotlin bindings. |
 | `crates/sim` | Desktop simulator: deterministic scenarios over virtual radios. |
 | `android/` | Android app (Jetpack Compose, JNA, ZXing). |
 | `docs/` | Plan, protocol, progress ledger, ADRs, research brief. |
@@ -119,8 +116,11 @@ simulator. The native shells own only the BLE radio and the screen.
 
 - **Local clusters, ~50–500 people in physical proximity** — not city-scale realtime chat. BLE
   physics (5–8 reliable links/phone, limited airtime) doesn't allow it, and we don't pretend it does.
-- **The network needs radios on.** Backgrounded iPhones barely relay (Apple's rules); the UI is
-  honest that screen-on carries the mesh.
+- **Android only.** There is no iOS app, and iPhones cannot join the mesh at all. In a mixed crowd
+  that is a large fraction of people you simply cannot reach. iOS is deferred, not planned — see
+  [`ROADMAP.md`](ROADMAP.md).
+- **The network needs radios on.** The mesh exists only while people's screens are on and the app
+  is relaying; the UI is honest that screen-on carries the mesh.
 - **Public channels are public.** Anyone in radio range reads them — there is no lock, ever.
 - **Not yet audited.** The crypto is vetted (Noise via `snow`, ed25519-dalek, SQLCipher), but this
   has **not** had an external security audit. Don't bet a life on it yet.
@@ -186,8 +186,8 @@ valuable thing anyone can offer right now.
 
 ## Contributing
 
-Contributions are very welcome — especially **security review**, **hardware reports** from device
-combinations we don't own, and **iOS**.
+Contributions are very welcome — especially **security review** and **hardware reports** from
+Android device combinations we don't own.
 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, the project invariants, how to run the simulator
 - [`ROADMAP.md`](ROADMAP.md) — what's done, what's next, what we're deliberately not building

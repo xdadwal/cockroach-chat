@@ -161,7 +161,11 @@ keys in DMs; `media_chunk` fuzz target.
 **Done:** voice note + photo phone→phone offline; chat sent mid-transfer lands <2 s; fetch
 resumes after walking away and back.
 
-### M5 — iOS shell (~4 wks)
+### M5 — iOS shell (~4 wks) — **DEFERRED**
+> **Deferred indefinitely; the project is Android-only.** Kept here as design research so nothing
+> is lost if it's picked back up — see the reasoning in [`ROADMAP.md`](../ROADMAP.md) § Deferred.
+> The core stays sans-IO and platform-agnostic, so the door remains open by construction.
+
 `build-xcframework.sh` (aarch64-ios + sim, Swift bindings, SPM package; macOS CI job) →
 Info.plist background modes (`bluetooth-central`, `bluetooth-peripheral`) → CoreBluetooth dual
 role with **state restoration** + pending-`connect()` reconnects (the one durable iOS

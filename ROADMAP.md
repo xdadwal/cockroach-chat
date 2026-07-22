@@ -30,12 +30,6 @@ Voice notes (Opus, 16 kHz mono, 60 s cap) and images (downscaled, ≤256 KiB) ov
 protocol: 4 KiB chunks at low priority, resuming after a link drop, with per-object blob keys
 carried in DMs.
 
-### M5 — iOS  ·  *biggest open contribution*
-Not started. The Rust core is built to drop in — the work is an `xcframework` build, CoreBluetooth
-dual role with state restoration and pending-connect reconnects (the one durable iOS background
-primitive), the Android-side overflow-area scan filter so Android can find backgrounded iPhones, and
-SwiftUI screens. **If you know CoreBluetooth, this is the highest-impact thing you could pick up.**
-
 ### M6 — Hardening
 Four-tier battery duty cycling (target ≤15% per 12 h idle), an OEM survival matrix
 (Samsung/Xiaomi/Pixel) with in-app whitelisting guidance, all fuzz targets clean for ≥8 h, panic
@@ -50,6 +44,24 @@ store-takedown hedge.
 - **Reproducible builds**, so a release binary can be verified against source rather than trusted.
 
 See [`docs/threat-model.md`](docs/threat-model.md) for what is and isn't defended today.
+
+## Deferred
+
+**iOS (was M5) — not being worked on, and not accepting contributions for it right now.**
+
+This is a real limitation, not a technicality: iPhones cannot join the mesh at all, so in a mixed
+crowd a large fraction of people are unreachable. It's stated plainly in the README's honest limits
+rather than buried here.
+
+The reason to defer is focus. The Android app is unaudited, its parsers have only hours of fuzzing,
+and battery duty-cycling (M6) isn't built — a second platform would double the surface needing
+review while the first one still isn't trustworthy. Apple's background rules also mean a
+backgrounded iPhone barely relays, so an iOS port buys less mesh capacity than its cost suggests.
+
+The design work survives in [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) § M5
+(`xcframework` build, CoreBluetooth dual role with state restoration, the overflow-area scan
+filter) so nothing is lost if this is picked back up. The Rust core stays platform-agnostic and
+sans-IO, which keeps the door open by construction.
 
 ## Explicitly not planned
 
