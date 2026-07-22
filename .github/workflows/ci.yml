@@ -81,11 +81,13 @@ jobs:
       # holding it up. Real coverage comes from the nightly job below.
       - name: Fuzz the parsers
         working-directory: crates/meshcore/fuzz
+        # `+nightly` is required, not decorative: rust-toolchain.toml at the repo root pins stable
+        # and overrides the toolchain action, so a bare `cargo fuzz run` fails on -Zsanitizer.
         run: |
           set -euo pipefail
           for target in wire_decode frag_reassemble decompress; do
             echo "::group::$target"
-            cargo fuzz run "$target" -- -max_total_time=60 -print_final_stats=1
+            cargo +nightly fuzz run "$target" -- -max_total_time=60 -print_final_stats=1
             echo "::endgroup::"
           done
 

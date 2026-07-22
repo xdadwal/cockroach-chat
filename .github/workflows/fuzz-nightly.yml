@@ -35,9 +35,11 @@ jobs:
 
       - name: Fuzz ${{ matrix.target }}
         working-directory: crates/meshcore/fuzz
+        # `+nightly` is required: rust-toolchain.toml at the repo root pins stable and overrides
+        # the toolchain action, so a bare `cargo fuzz run` fails on -Zsanitizer.
         run: |
           MINUTES="${{ github.event.inputs.minutes || '20' }}"
-          cargo fuzz run "${{ matrix.target }}" -- \
+          cargo +nightly fuzz run "${{ matrix.target }}" -- \
             -max_total_time=$(( MINUTES * 60 )) -print_final_stats=1
 
       - name: Upload crash artifacts
