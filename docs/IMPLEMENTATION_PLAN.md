@@ -1,7 +1,7 @@
 # Cockroach Chat — Implementation Plan
 
 > **Execution model:** this plan is driven by a Ralph loop. The loop reads `docs/PROGRESS.md`
-> (mutable ledger) and follows `PROMPT.md` (standing instructions). This file is the stable,
+> (mutable ledger) and follows `docs/ai-build-loop.md` (standing instructions). This file is the stable,
 > detailed reference — the "what and why." Hard constraints live in `docs/research-brief.md`;
 > the normative wire format lives in `docs/protocol.md`.
 

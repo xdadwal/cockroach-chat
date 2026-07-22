@@ -45,12 +45,16 @@ jobs:
             exit 1
           fi
           echo "$KEYSTORE_BASE64" | base64 -d > android/release.jks
-          cat > android/keystore.properties <<EOF
-          storeFile=release.jks
-          storePassword=$KEYSTORE_PASSWORD
-          keyAlias=$KEY_ALIAS
-          keyPassword=$KEY_PASSWORD
-          EOF
+          # printf rather than a heredoc: an unquoted heredoc would command-substitute a password
+          # containing a backtick or $(...). Note that Java's .properties format also treats
+          # backslash as an escape, so avoid backslashes in the keystore passwords.
+          {
+            printf 'storeFile=release.jks\n'
+            printf 'storePassword=%s\n' "$KEYSTORE_PASSWORD"
+            printf 'keyAlias=%s\n' "$KEY_ALIAS"
+            printf 'keyPassword=%s\n' "$KEY_PASSWORD"
+          } > android/keystore.properties
+          chmod 600 android/keystore.properties android/release.jks
 
       - name: Assemble release APK
         working-directory: android
