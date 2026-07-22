@@ -37,6 +37,10 @@ Cargo.lock.orig
 
 # Android
 android/local.properties
+# Release signing material — never commit. CI writes these from repository secrets.
+android/keystore.properties
+*.jks
+*.keystore
 android/.gradle/
 android/build/
 android/app/build/
@@ -46,3 +50,8 @@ android/app/src/main/java/uniffi/
 
 # Gradle wrapper jar must be committed (overrides *.jar above)
 !**/gradle/wrapper/gradle-wrapper.jar
+
+# cargo-fuzz working data (corpus is regenerable; artifacts are crash inputs)
+crates/meshcore/fuzz/corpus/
+crates/meshcore/fuzz/artifacts/
+crates/meshcore/fuzz/coverage/

@@ -1,7 +1,7 @@
 # Cockroach Chat — Implementation Plan
 
 > **Execution model:** this plan is driven by a Ralph loop. The loop reads `docs/PROGRESS.md`
-> (mutable ledger) and follows `PROMPT.md` (standing instructions). This file is the stable,
+> (mutable ledger) and follows `docs/ai-build-loop.md` (standing instructions). This file is the stable,
 > detailed reference — the "what and why." Hard constraints live in `docs/research-brief.md`;
 > the normative wire format lives in `docs/protocol.md`.
 
@@ -161,7 +161,11 @@ keys in DMs; `media_chunk` fuzz target.
 **Done:** voice note + photo phone→phone offline; chat sent mid-transfer lands <2 s; fetch
 resumes after walking away and back.
 
-### M5 — iOS shell (~4 wks)
+### M5 — iOS shell (~4 wks) — **DEFERRED**
+> **Deferred indefinitely; the project is Android-only.** Kept here as design research so nothing
+> is lost if it's picked back up — see the reasoning in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+> The core stays sans-IO and platform-agnostic, so the door remains open by construction.
+
 `build-xcframework.sh` (aarch64-ios + sim, Swift bindings, SPM package; macOS CI job) →
 Info.plist background modes (`bluetooth-central`, `bluetooth-peripheral`) → CoreBluetooth dual
 role with **state restoration** + pending-`connect()` reconnects (the one durable iOS

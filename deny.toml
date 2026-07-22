@@ -1,0 +1,44 @@
+# cargo-deny config — run by the `audit` CI job.
+#   cargo deny check advisories licenses bans sources
+
+[advisories]
+yanked = "deny"
+# Only "unmaintained" advisories belong here, each with a reason and a path out.
+# A real vulnerability must never be silenced — fix or vendor around it instead.
+ignore = [
+    # paste: archived by its author. Reached only through uniffi_bindgen/uniffi_core, both
+    # build-time. No safe upgrade exists; it goes away when UniFFI drops it upstream.
+    "RUSTSEC-2024-0436",
+    # bincode 1.3.3: development ceased (not a vulnerability — the team considers 1.3.3 complete).
+    # Reached only through uniffi_macros at build time. Goes away with a UniFFI upgrade.
+    "RUSTSEC-2025-0141",
+]
+
+[licenses]
+# We ship an APK, so every bundled license has to be one we can actually comply with.
+# The current dependency tree is overwhelmingly MIT/Apache-2.0; the rest are noted below.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",   # ed25519-dalek, x25519-dalek
+    "ISC",
+    "MPL-2.0",        # uniffi — weak file-level copyleft; used unmodified. See NOTICE.md.
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# Our own crates depend on each other by path within the workspace; those aren't the unpinned
+# registry wildcards this check is meant to catch.
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

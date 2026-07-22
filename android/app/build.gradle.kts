@@ -1,3 +1,7 @@
+// Imported at the top level: inside the `android { }` block, `java` resolves to Gradle's java
+// extension and shadows the java.util package.
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -19,9 +23,32 @@ android {
         }
     }
 
+    // Release signing. Local builds read android/keystore.properties (gitignored); CI writes the
+    // same file from repository secrets, so both paths are identical. Absent that file, the release
+    // build stays unsigned rather than silently falling back to the debug key — an APK signed with
+    // a publicly-known debug key would be worse than no signature at all.
+    val keystorePropsFile = rootProject.file("keystore.properties")
+    val keystoreProps = Properties().apply {
+        if (keystorePropsFile.exists()) keystorePropsFile.inputStream().use { load(it) }
+    }
+
+    signingConfigs {
+        if (keystorePropsFile.exists()) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // R8 is off for now: JNA and the generated UniFFI bindings both resolve through
+            // reflection, so enabling it needs keep-rules and its own on-device verification.
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
@@ -60,4 +87,5 @@ dependencies {
     // QR generation + camera scanning for in-person verification.
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
 }

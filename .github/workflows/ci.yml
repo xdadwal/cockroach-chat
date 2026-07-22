@@ -8,6 +8,12 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# The android job cross-compiles SQLCipher's vendored OpenSSL, which is slow on a cold cache.
+# Superseding pushes cancel the older run rather than queueing behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     name: rust (fmt, clippy, test, sim)
@@ -38,3 +44,112 @@ jobs:
 
       - name: Simulator smoke (200-node broadcast)
         run: cargo run -p sim -- --nodes 200 --scenario broadcast
+
+  msrv:
+    name: msrv (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Keeps Cargo.toml's declared rust-version honest. Must match it exactly.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.85"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check workspace builds on the declared MSRV
+        run: cargo check --workspace --all-targets
+
+  fuzz:
+    name: fuzz (smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # cargo-fuzz needs nightly for -Z sanitizer support.
+      - uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/meshcore/fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      # A short smoke run per target: enough to catch a regression that crashes quickly, and
+      # deliberately nothing more. There is no scheduled long-running fuzz job, and no corpus is
+      # persisted between runs, so this finds regressions rather than new bugs. Sustained fuzzing
+      # is a manual step — see CONTRIBUTING.md.
+      - name: Fuzz the parsers
+        working-directory: crates/meshcore/fuzz
+        # `+nightly` is required, not decorative: rust-toolchain.toml at the repo root pins stable
+        # and overrides the toolchain action, so a bare `cargo fuzz run` fails on -Zsanitizer.
+        run: |
+          set -euo pipefail
+          for target in wire_decode frag_reassemble decompress; do
+            echo "::group::$target"
+            cargo +nightly fuzz run "$target" -- -max_total_time=60 -print_final_stats=1
+            echo "::endgroup::"
+          done
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: crates/meshcore/fuzz/artifacts/
+          if-no-files-found: ignore
+
+  audit:
+    name: audit (advisories, licenses, bans)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories licenses bans sources
+
+  android:
+    name: android (build + lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Emulator ABI only — building all three would triple CI time for no extra signal on a PR.
+          targets: x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Cross-compile core + generate Kotlin bindings
+        # The script auto-detects the NDK from ANDROID_HOME on the runner.
+        run: ABIS=x86_64 ./scripts/build-android-lib.sh
+
+      - name: Assemble debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Android lint
+        working-directory: android
+        run: ./gradlew lintDebug --no-daemon
+
+      - name: Unit tests
+        working-directory: android
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Upload lint report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-lint-report
+          path: android/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore

@@ -11,8 +11,28 @@ blackouts. Named for the thing that survives when the lights go out.
 Every phone is both a client and a relay. Messages hop phone-to-phone across a dense crowd, so
 the network exists only as long as people's radios are on — and it belongs to no one.
 
-> **Status: 🚧 In active development.** Validated on Android hardware (Galaxy S23 ↔ OnePlus).
-> iOS not started; **not yet security-audited** — don't bet a life on it yet.
+> ## ⚠️ Under active development — and unaudited
+>
+> This app is meant to be used in the field, and we'd rather it be in your hands than withheld.
+> Use it knowing three things:
+>
+> **It may not work as expected.** Especially in dense crowds, heavy interference or jamming, on
+> low battery, or on Android builds we've never seen. Delivery is best-effort — a message that
+> looks sent may never arrive. **Always have a fallback that doesn't depend on this app.**
+>
+> **It cannot make you anonymous.** Encryption protects what you say, not the fact that a radio
+> near you is speaking. A co-located observer can correlate timing and signal strength no matter
+> what we encrypt.
+>
+> **The crypto is unaudited.** The libraries are vetted (Noise via `snow`, ed25519-dalek,
+> SQLCipher) and there's a written threat model, but nobody independent has reviewed how we put
+> them together.
+>
+> **Read [`docs/threat-model.md`](docs/threat-model.md) before deciding this fits your situation.**
+
+**Status: 🚧 In active development. Android only.** Validated on Android hardware
+(Galaxy S23 ↔ OnePlus). Built in the open — see [contributing](CONTRIBUTING.md) and the
+[threat model](docs/threat-model.md).
 
 ---
 
@@ -64,22 +84,19 @@ Proven on real hardware (Galaxy S23 ↔ OnePlus, airplane mode):
 (broadcast to 200 nodes, partition heal, duplicate-storm suppression, malicious-flooder
 containment, multi-hop relay, store-and-forward, DM handshake retry, and more).
 
-**iOS:** not started yet — the shared core is built to drop in (planned M5).
-
 ---
 
 ## How it works
 
-One protocol, one implementation, no cross-platform drift:
+The protocol lives in one place, so the platform shell owns only the radio and the screen:
 
 ```
-┌──────────────────────────────┐        ┌──────────────────────────────┐
-│  Android (Kotlin / Compose)  │        │        iOS (planned)         │
-│  BLE GATT radio · UI only    │        │  CoreBluetooth · UI only     │
-└───────────────┬──────────────┘        └───────────────┬──────────────┘
-                │            UniFFI  (meshcore-ffi)      │
-                └──────────────────┬────────────────────┘
-                                   ▼
+                ┌──────────────────────────────┐
+                │  Android (Kotlin / Compose)  │
+                │  BLE GATT radio · UI only    │
+                └───────────────┬──────────────┘
+                                │  UniFFI (meshcore-ffi)
+                                ▼
         ┌───────────────────────────────────────────────┐
         │   meshcore  — pure sans-IO Rust core           │
         │   wire codec · fragmentation · identity + PoW  │
@@ -91,7 +108,7 @@ One protocol, one implementation, no cross-platform drift:
 
 The core is **sans-IO**: no threads, no sockets, no clock syscalls. Time, transport, and storage
 are injected, which is what makes hundreds of virtual nodes replayable in a deterministic
-simulator. The native shells own only the BLE radio and the screen.
+simulator. The native shell owns only the BLE radio and the screen.
 
 ### Repo layout
 
@@ -99,7 +116,7 @@ simulator. The native shells own only the BLE radio and the screen.
 |---|---|
 | `crates/meshcore` | The protocol/crypto/mesh core (sans-IO, no platform deps). |
 | `crates/meshcore-store` | SQLCipher-backed encrypted persistence (`Store` trait). |
-| `crates/meshcore-ffi` | UniFFI wrapper → Kotlin/Swift bindings. |
+| `crates/meshcore-ffi` | UniFFI wrapper → Kotlin bindings. |
 | `crates/sim` | Desktop simulator: deterministic scenarios over virtual radios. |
 | `android/` | Android app (Jetpack Compose, JNA, ZXing). |
 | `docs/` | Plan, protocol, progress ledger, ADRs, research brief. |
@@ -110,13 +127,38 @@ simulator. The native shells own only the BLE radio and the screen.
 
 - **Local clusters, ~50–500 people in physical proximity** — not city-scale realtime chat. BLE
   physics (5–8 reliable links/phone, limited airtime) doesn't allow it, and we don't pretend it does.
-- **The network needs radios on.** Backgrounded iPhones barely relay (Apple's rules); the UI is
-  honest that screen-on carries the mesh.
+- **Android only.** There is no iOS app, and iPhones cannot join the mesh at all. In a mixed crowd
+  that is a large fraction of people you simply cannot reach. iOS is deferred — see
+  [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- **The network needs radios on.** The mesh exists only while people's screens are on and the app
+  is relaying; the UI is honest that screen-on carries the mesh.
 - **Public channels are public.** Anyone in radio range reads them — there is no lock, ever.
 - **Not yet audited.** The crypto is vetted (Noise via `snow`, ed25519-dalek, SQLCipher), but this
-  has **not** had an external security audit. Don't bet a life on it yet.
+  has **not** had an external security audit.
+- **Delivery is best-effort.** No acknowledgements, no guaranteed ordering, no retry forever. A
+  message that looks sent may never arrive, and under interference or jamming the mesh may not work
+  at all. Never treat "sent" as "delivered" for anything that matters.
 
 See `docs/research-brief.md` for the constraints and prior-art lessons everything is built on.
+
+### If you take this into the field
+
+This is built to be used — in a protest, a blackout, a disaster — and we'd rather it be in your
+hands than withheld until some future perfect version. Use it with your eyes open:
+
+- **Always have a fallback that does not depend on this app.** A meeting point, a time, a person.
+- **Never treat "sent" as "delivered"** for anything that matters. Confirm out of band.
+- **Assume transmitting is observable.** Encryption protects what you say, not the fact that a
+  radio near you is speaking.
+- **Verify in person** before trusting a DM's identity. Unverified means unverified.
+
+### What we still owe you
+
+- **An external security audit.** The single biggest gap. Committed, unscheduled — and we'll say so
+  loudly when it happens, equally loudly if it finds something.
+- **Sustained fuzzing.** Targets exist for the three parsers, but CI runs them 60 s each on PRs:
+  regression detection, not a search for new bugs. The Noise handshake and store have no targets.
+- **Reproducible builds**, so a release binary can be checked against source rather than trusted.
 
 ---
 
@@ -153,14 +195,74 @@ Real BLE needs a **physical phone** (emulators have no Bluetooth radio).
 | `docs/PROGRESS.md` | Live build ledger — what's done, what's next. |
 | `docs/protocol.md` | Normative wire format. |
 | `docs/PERFORMANCE.md` | Performance backlog and tuning notes. |
+| `docs/threat-model.md` | **What this protects against — and what it doesn't.** Read first. |
 | `docs/research-brief.md` | The constraints and prior-art lessons everything is built on. |
 | `docs/decisions/` | Architecture decision records. |
+| `docs/ai-build-loop.md` | The agent prompt this was built with (see below). |
+
+---
+
+## How this was built
+
+Most of this codebase was written by an AI agent running an iterative build loop — the prompt that
+drove it is in [`docs/ai-build-loop.md`](docs/ai-build-loop.md), and `docs/PROGRESS.md` is the
+resulting task-by-task ledger.
+
+That's worth stating plainly rather than leaving you to guess, because it should change how you read
+the code. Every change was gated on `cargo test --workspace`, `cargo clippy -- -D warnings`, and the
+deterministic simulator scenarios, and the BLE and UI work was verified on physical phones — but
+**this has had far fewer human eyes on it than a security tool deserves.** That is precisely why
+the threat model is blunt, why unaudited is stated loudly, and why review contributions are the most
+valuable thing anyone can offer right now.
+
+---
+
+## Contributing
+
+Contributions are very welcome — especially **security review** and **hardware reports** from
+Android device combinations we don't own.
+
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, the project invariants, review rules, what's out of
+  scope
+- [`SECURITY.md`](SECURITY.md) — **report vulnerabilities privately**, never in a public issue
+- [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+
+Good first issues are labelled [`good first issue`](https://github.com/xdadwal/cockroach-chat/labels/good%20first%20issue);
+several come straight out of [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+
+---
+
+## Credits
+
+This project stands on other people's work.
+
+**Type.** The interface is set in two typefaces, both used unmodified under the
+[SIL Open Font License 1.1](https://openfontlicense.org):
+
+- **[Archivo](https://github.com/Omnibus-Type/Archivo)** — carries the voice. By
+  [Omnibus-Type](https://www.omnibus-type.com), designed by Hector Gatti.
+- **[JetBrains Mono](https://github.com/JetBrains/JetBrainsMono)** — carries the fact: fingerprints,
+  safety numbers, IDs. By [JetBrains](https://www.jetbrains.com), designed by Philipp Nurullin and
+  Konstantin Bulenkov.
+
+**Cryptography.** We hand-roll nothing. The security of this app rests on
+[`snow`](https://github.com/mcginty/snow) (Noise protocol),
+[`ed25519-dalek` and `x25519-dalek`](https://github.com/dalek-cryptography),
+the [RustCrypto](https://github.com/RustCrypto) family, and
+[SQLCipher](https://www.zetetic.net/sqlcipher/). Any strength here is theirs; the mistakes are ours.
+
+**Prior art.** Bridgefy, bitchat, Briar, Meshtastic, FireChat and Serval each taught us something —
+often by failing publicly and honestly. [`docs/research-brief.md`](docs/research-brief.md) records
+what we took from each.
+
+Full license inventory: [`NOTICE.md`](NOTICE.md).
 
 ---
 
 ## License
 
-See [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE). Bundled fonts and dependencies carry their own terms; see
+[`NOTICE.md`](NOTICE.md).
 
 <br>
 
