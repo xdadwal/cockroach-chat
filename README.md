@@ -200,6 +200,33 @@ several come straight out of [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
 ---
 
+## Credits
+
+This project stands on other people's work.
+
+**Type.** The interface is set in two typefaces, both used unmodified under the
+[SIL Open Font License 1.1](https://openfontlicense.org):
+
+- **[Archivo](https://github.com/Omnibus-Type/Archivo)** — carries the voice. By
+  [Omnibus-Type](https://www.omnibus-type.com), designed by Hector Gatti.
+- **[JetBrains Mono](https://github.com/JetBrains/JetBrainsMono)** — carries the fact: fingerprints,
+  safety numbers, IDs. By [JetBrains](https://www.jetbrains.com), designed by Philipp Nurullin and
+  Konstantin Bulenkov.
+
+**Cryptography.** We hand-roll nothing. The security of this app rests on
+[`snow`](https://github.com/mcginty/snow) (Noise protocol),
+[`ed25519-dalek` and `x25519-dalek`](https://github.com/dalek-cryptography),
+the [RustCrypto](https://github.com/RustCrypto) family, and
+[SQLCipher](https://www.zetetic.net/sqlcipher/). Any strength here is theirs; the mistakes are ours.
+
+**Prior art.** Bridgefy, bitchat, Briar, Meshtastic, FireChat and Serval each taught us something —
+often by failing publicly and honestly. [`docs/research-brief.md`](docs/research-brief.md) records
+what we took from each.
+
+Full license inventory: [`NOTICE.md`](NOTICE.md).
+
+---
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE). Bundled fonts and dependencies carry their own terms; see

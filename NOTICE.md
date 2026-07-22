@@ -1,9 +1,15 @@
 # Third-party notices
 
 Cockroach Chat is licensed under the MIT License (see [`LICENSE`](LICENSE)). It bundles and links
-the third-party work listed below. This file is the source-repo copy; the license texts that must
-ship with the binary are also packaged into the APK under `assets/licenses/` and are viewable
-in-app from **Me → Open-source licenses**.
+the third-party work listed below.
+
+This file is the human-readable index. The license texts themselves live in
+`android/app/src/main/assets/licenses/` and are packaged **inside the APK**, so they travel with
+the binary as the OFL requires — not only with this repository. To read them from a downloaded
+APK: `unzip -p cockroach-chat-<version>.apk assets/licenses/OFL-Archivo.txt`.
+
+There is no in-app licenses viewer yet. Bundling satisfies the license terms; a viewer would be
+the friendlier form and is a welcome contribution.
 
 ## Bundled fonts
 
