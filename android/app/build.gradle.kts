@@ -82,7 +82,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     // FileProvider for "Share this app" (serving the staged APK to the share sheet).
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     // UniFFI-generated Kotlin bindings load the native library through JNA.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
