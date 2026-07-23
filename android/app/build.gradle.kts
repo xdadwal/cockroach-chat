@@ -83,7 +83,7 @@ dependencies {
     // FileProvider for "Share this app" (serving the staged APK to the share sheet).
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     // UniFFI-generated Kotlin bindings load the native library through JNA.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
     // QR generation + camera scanning for in-person verification.
