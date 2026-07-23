@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the staged APK copy is exposed; nothing else in the cache dir is shareable. -->
+<paths>
+    <cache-path name="apk" path="apk/" />
+</paths>

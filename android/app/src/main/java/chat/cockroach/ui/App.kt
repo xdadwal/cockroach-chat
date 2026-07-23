@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.*
@@ -43,11 +44,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Color
+import chat.cockroach.ApkSharer
 import chat.cockroach.BleController
 import chat.cockroach.ChatMessage
 import chat.cockroach.Peer
 import chat.cockroach.ble.MeshForegroundService
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.min
 import com.google.zxing.BarcodeFormat
 import com.journeyapps.barcodescanner.BarcodeEncoder
@@ -81,6 +85,7 @@ private sealed interface Route {
     data class Verify(val peerFp: String?, val scan: Boolean = false) : Route
     data object Status : Route
     data object Credits : Route
+    data object ShareApp : Route
 }
 
 @Composable
@@ -150,12 +155,14 @@ private fun MeshShell(ble: BleController) {
                 is Route.Verify -> VerifyFlow(ble, r.peerFp, r.scan, onDone = { fp -> pop(); if (fp != null) push(Route.Dm(fp)) }, onCancel = ::pop)
                 Route.Status -> StatusScreen(ble, ::pop)
                 Route.Credits -> CreditsScreen(::pop)
+                Route.ShareApp -> ShareAppScreen(::pop)
                 null -> when (tab) {
                     NavTab.Feed -> FeedScreen(ble, feedTab, { feedTab = it }, onOpenChannel = { push(Route.Channel(it)) }, onOpenDm = { push(Route.Dm(it)) }, onStatus = { push(Route.Status) })
                     NavTab.Me -> IdentityScreen(
                         ble,
                         onShowQr = { push(Route.Verify(null, scan = false)) },
                         onScanQr = { push(Route.Verify(null, scan = true)) },
+                        onShareApp = { push(Route.ShareApp) },
                         onCredits = { push(Route.Credits) },
                     )
                 }
@@ -610,7 +617,7 @@ private fun VerifyFlow(ble: BleController, peerFp: String?, startScan: Boolean, 
 // --- identity (ME) + panic entry ----------------------------------------------------------------
 
 @Composable
-private fun IdentityScreen(ble: BleController, onShowQr: () -> Unit, onScanQr: () -> Unit, onCredits: () -> Unit) {
+private fun IdentityScreen(ble: BleController, onShowQr: () -> Unit, onScanQr: () -> Unit, onShareApp: () -> Unit, onCredits: () -> Unit) {
     val s = LocalStrings.current
     Column(Modifier.fillMaxSize().background(CcBase)) {
         Column(Modifier.fillMaxWidth().bottomHairline().padding(start = 18.dp, top = 15.dp, end = 18.dp, bottom = 12.dp)) {
@@ -630,6 +637,11 @@ private fun IdentityScreen(ble: BleController, onShowQr: () -> Unit, onScanQr: (
                 }
             }
             item { IdentityAction(s.scanQr, s.scanQrSub, onClick = onScanQr) { ScanGlyph(CcInk, 20.dp) } }
+            item {
+                IdentityAction(s.shareApp, s.shareAppSub, onClick = onShareApp) {
+                    Icon(Icons.Filled.Share, null, tint = CcInk, modifier = Modifier.size(18.dp))
+                }
+            }
             // Language switch.
             item {
                 Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(CcRaised).border(1.dp, CcInkMute(0.1f), RoundedCornerShape(13.dp)).padding(15.dp)) {
@@ -688,6 +700,90 @@ private fun IdentityAction(title: String, sub: String, onClick: () -> Unit, icon
         Column(Modifier.weight(1f)) {
             CcText(title, 14, FontWeight.ExtraBold, CcInk)
             CcText(sub, 11, FontWeight.Medium, CcInkMute(0.5f))
+        }
+    }
+}
+
+/** Passes the installed APK to a nearby phone via the system share sheet (Bluetooth, Quick
+ *  Share, …) — the receiver has stock Android and nothing else, so an OS channel is the only
+ *  one that works. Shows the live signing fingerprint so a tampered copy betrays itself. */
+@Composable
+private fun ShareAppScreen(onBack: () -> Unit) {
+    val s = LocalStrings.current
+    val context = LocalContext.current
+    // Fingerprint and split-ness are cheap PackageManager lookups; the APK copy is file I/O and
+    // stages off the main thread. `failed` stays honest: no share button until the copy exists.
+    val fingerprint = remember { ApkSharer.signingCertSha256(context) }
+    val split = remember { ApkSharer.hasSplits(context) }
+    var staged by remember { mutableStateOf<java.io.File?>(null) }
+    var failed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        staged = withContext(Dispatchers.IO) { ApkSharer.stageApk(context) }
+        failed = staged == null
+    }
+    Column(Modifier.fillMaxSize().background(CcBase)) {
+        Row(
+            Modifier.fillMaxWidth().bottomHairline().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            BackIcon(onBack)
+            Column {
+                CcText(s.shareApp, 20, FontWeight.Black, CcInk, letterSpacing = (-0.3))
+                CcText(s.shareAppSubtitle, 11, FontWeight.SemiBold, CcAmberText, mono = true)
+            }
+        }
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item { CcText(s.shareIntro, 13, FontWeight.Medium, CcInkMute(0.62f), lineHeightMul = 1.55) }
+            if (split) {
+                item {
+                    Column(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp))
+                            .background(CcDestructive.copy(alpha = 0.07f))
+                            .border(1.dp, CcDestructive.copy(alpha = 0.4f), RoundedCornerShape(13.dp))
+                            .padding(15.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                            Icon(Icons.Filled.Warning, null, tint = CcDestructiveText, modifier = Modifier.size(16.dp))
+                            CcText(s.shareSplitWarn, 12, FontWeight.Medium, CcDestructiveText, lineHeightMul = 1.5, modifier = Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+            item {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(CcRaised)
+                        .border(1.dp, CcInkMute(0.1f), RoundedCornerShape(13.dp)).padding(15.dp),
+                ) {
+                    SectionLabel(s.shareFpLabel, CcAmberText)
+                    Spacer(Modifier.height(9.dp))
+                    CcText(fingerprint ?: s.shareFpUnknown, 13, FontWeight.SemiBold, CcInk, mono = true, lineHeightMul = 1.5)
+                    Spacer(Modifier.height(9.dp))
+                    CcText(s.shareFpBody, 12, FontWeight.Medium, CcInkMute(0.62f), lineHeightMul = 1.5)
+                }
+            }
+            item {
+                Column(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(CcRaised)
+                        .border(1.dp, CcInkMute(0.1f), RoundedCornerShape(13.dp)).padding(15.dp),
+                ) {
+                    SectionLabel(s.shareStepsLabel, CcInkMute(0.5f))
+                    Spacer(Modifier.height(9.dp))
+                    CcText(s.shareSteps, 13, FontWeight.Medium, CcInkMute(0.75f), lineHeightMul = 1.6)
+                }
+            }
+        }
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
+            if (failed) {
+                CcText(s.shareFailed, 12, FontWeight.SemiBold, CcDestructiveText, lineHeightMul = 1.4)
+                Spacer(Modifier.height(9.dp))
+            }
+            CcPrimaryButton(
+                if (staged != null || failed) s.shareButton else s.sharePreparing,
+                onClick = { staged?.let { context.startActivity(ApkSharer.shareIntent(context, it, s.shareApp)) } },
+                Modifier.fillMaxWidth(),
+                enabled = staged != null,
+            )
         }
     }
 }

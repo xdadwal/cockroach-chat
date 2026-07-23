@@ -42,6 +42,18 @@
             android:windowSoftInputMode="stateAlwaysHidden"
             android:exported="false" />
 
+        <!-- Serves the staged copy of our own APK to the system share sheet ("Share this app"),
+             so the app can spread phone-to-phone when the download channel is blocked. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths" />
+        </provider>
+
         <!-- Real BLE relay (hardware only; not started by the emulator demo). -->
         <service
             android:name=".ble.MeshForegroundService"
