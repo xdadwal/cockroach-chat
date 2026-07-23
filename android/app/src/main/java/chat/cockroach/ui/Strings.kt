@@ -105,6 +105,21 @@ class Strings(
     val panicBody: String,
     val holdToWipe: String,
     val keepHolding: String,
+    // share app — passing the APK itself to a nearby phone; "APK", "SHA-256", "Quick Share" and
+    // "SECURITY.md" are technical proper nouns and stay untranslated.
+    val shareApp: String,
+    val shareAppSub: String,
+    val shareAppSubtitle: String,
+    val shareIntro: String,
+    val shareButton: String,
+    val sharePreparing: String,
+    val shareFailed: String,
+    val shareFpLabel: String,
+    val shareFpBody: String,
+    val shareFpUnknown: String,
+    val shareStepsLabel: String,
+    val shareSteps: String,
+    val shareSplitWarn: String,
     // status
     val statusTitle: String,
     val statusSubtitle: String,
@@ -205,6 +220,23 @@ val EnStrings = Strings(
     panicBody = "Press and hold for 5 seconds to erase your keys and every message — for when your phone is about to be seized. This cannot be undone.",
     holdToWipe = "Hold to wipe · 5s",
     keepHolding = "Keep holding… %d%%",
+    shareApp = "Share this app",
+    shareAppSub = "Pass the app to a nearby phone — no internet",
+    shareAppSubtitle = "offline · phone to phone",
+    shareIntro = "App stores and downloads can be blocked. This sends your installed copy of " +
+        "Cockroach Chat straight to a nearby phone over Bluetooth or Quick Share — no internet needed.",
+    shareButton = "Share APK",
+    sharePreparing = "Preparing…",
+    shareFailed = "Couldn't prepare the APK. Free some storage and try again.",
+    shareFpLabel = "Signing fingerprint · SHA-256",
+    shareFpBody = "Every genuine copy shows this exact fingerprint. After installing, the receiver " +
+        "can compare it on their own share screen — or against SECURITY.md in the source repository.",
+    shareFpUnknown = "unavailable",
+    shareStepsLabel = "On the other phone",
+    shareSteps = "1. Accept the incoming file.\n2. Open it and allow installing from this source.\n" +
+        "3. Open this screen on their phone and compare the fingerprint with yours.",
+    shareSplitWarn = "This install is split into multiple files, so the shared copy may not " +
+        "install. Get a full APK from the source repository instead.",
     statusTitle = "Mesh status",
     statusSubtitle = "You're carrying the network right now.",
     statPhones = "phones in range",
@@ -307,6 +339,23 @@ val HiStrings = Strings(
     panicBody = "अपनी कुंजियाँ और हर संदेश मिटाने के लिए 5 सेकंड दबाकर रखें — जब आपका फ़ोन ज़ब्त होने वाला हो। इसे पूर्ववत नहीं किया जा सकता।",
     holdToWipe = "मिटाने के लिए दबाए रखें · 5से",
     keepHolding = "दबाए रखें… %d%%",
+    shareApp = "यह ऐप साझा करें",
+    shareAppSub = "पास के फ़ोन को ऐप भेजें — बिना इंटरनेट",
+    shareAppSubtitle = "ऑफ़लाइन · फ़ोन से फ़ोन",
+    shareIntro = "ऐप स्टोर और डाउनलोड रोके जा सकते हैं। यह आपकी इंस्टॉल की गई कॉपी सीधे पास के फ़ोन को " +
+        "ब्लूटूथ या Quick Share से भेजता है — इंटरनेट की ज़रूरत नहीं।",
+    shareButton = "APK भेजें",
+    sharePreparing = "तैयार हो रहा है…",
+    shareFailed = "APK तैयार नहीं हो सका। थोड़ी जगह खाली कर फिर प्रयास करें।",
+    shareFpLabel = "हस्ताक्षर फ़िंगरप्रिंट · SHA-256",
+    shareFpBody = "हर असली कॉपी यही फ़िंगरप्रिंट दिखाती है। इंस्टॉल के बाद पाने वाला इसे अपने फ़ोन की " +
+        "साझा स्क्रीन पर मिला सकता है — या सोर्स रिपॉज़िटरी की SECURITY.md से।",
+    shareFpUnknown = "उपलब्ध नहीं",
+    shareStepsLabel = "दूसरे फ़ोन पर",
+    shareSteps = "1. आती फ़ाइल स्वीकार करें।\n2. उसे खोलें और इस स्रोत से इंस्टॉल की अनुमति दें।\n" +
+        "3. उनके फ़ोन पर यह स्क्रीन खोलकर फ़िंगरप्रिंट अपने से मिलाएँ।",
+    shareSplitWarn = "यह इंस्टॉल कई फ़ाइलों में बँटा है, इसलिए भेजी गई कॉपी शायद इंस्टॉल न हो। " +
+        "पूरा APK सोर्स रिपॉज़िटरी से लें।",
     statusTitle = "मेश स्थिति",
     statusSubtitle = "आप अभी नेटवर्क को आगे पहुँचा रहे हैं।",
     statPhones = "रेंज में फ़ोन",
