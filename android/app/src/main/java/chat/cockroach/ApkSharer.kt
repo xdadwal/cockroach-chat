@@ -40,12 +40,12 @@ object ApkSharer {
         val pm = context.packageManager
         val cert: ByteArray = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val info = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
-            info.signingInfo.apkContentsSigners.firstOrNull()?.toByteArray()
+            info.signingInfo?.apkContentsSigners?.firstOrNull()?.toByteArray()
         } else {
             @Suppress("DEPRECATION")
             val info = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
             @Suppress("DEPRECATION")
-            info.signatures.firstOrNull()?.toByteArray()
+            info.signatures?.firstOrNull()?.toByteArray()
         } ?: return null
         formatFingerprint(MessageDigest.getInstance("SHA-256").digest(cert))
     }.getOrNull()
