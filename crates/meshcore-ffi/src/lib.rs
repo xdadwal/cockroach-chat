@@ -107,6 +107,12 @@ impl Store for FfiStore {
     fn take_envelopes(&mut self, recipient: &Fingerprint) -> Vec<Vec<u8>> {
         delegate!(self, take_envelopes(recipient))
     }
+    fn delete_peer(&mut self, fp: &Fingerprint) {
+        delegate!(self, delete_peer(fp))
+    }
+    fn delete_dms(&mut self, fp: &Fingerprint, only_control: bool) {
+        delegate!(self, delete_dms(fp, only_control))
+    }
     fn panic_wipe(&mut self) {
         delegate!(self, panic_wipe())
     }

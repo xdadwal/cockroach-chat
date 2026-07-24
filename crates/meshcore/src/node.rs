@@ -330,6 +330,37 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         self.try_send_verify_notice(fp);
     }
 
+    /// Undo an in-person verification: the peer drops back to unverified. Clears the live
+    /// session and the verification control rows (so a derived "confirmed both ends" state
+    /// resets) but keeps chat history and petname. Re-scan to verify again.
+    pub fn unverify_peer(&mut self, fp: Fingerprint) {
+        if let Some(mut p) = self.store.get_peer(&fp) {
+            p.verified = false;
+            self.store.upsert_peer(p);
+        }
+        self.store.delete_dms(&fp, true);
+        self.drop_peer_session_state(fp);
+    }
+
+    /// Forget a contact entirely: peer record, whole DM thread, live session state. They
+    /// reappear as a stranger on their next announce.
+    pub fn forget_peer(&mut self, fp: Fingerprint) {
+        self.store.delete_dms(&fp, false);
+        self.store.delete_peer(&fp);
+        self.drop_peer_session_state(fp);
+        self.fp_to_eph.remove(&fp);
+    }
+
+    fn drop_peer_session_state(&mut self, fp: Fingerprint) {
+        self.noise_sessions.remove(&fp);
+        self.pending_dms.remove(&fp);
+        self.pending_inbound_dms.remove(&fp);
+        self.handshake_last_ms.remove(&fp);
+        self.handshake_attempts.remove(&fp);
+        self.resync_pending.remove(&fp);
+        self.notice_pending.remove(&fp);
+    }
+
     /// Establish an encrypted session with a peer WITHOUT sending a message. Called right after
     /// in-person verification so the other device flips to "verified" immediately (the completed
     /// Noise session emits a `DmSession` on both ends), before any chat is exchanged.
@@ -1949,6 +1980,55 @@ mod tests {
             )),
             "text DMs must still deliver as kind 0"
         );
+    }
+
+    /// Unverify keeps the conversation but resets trust: verified flag off, control rows gone
+    /// (so "confirmed" cannot be re-derived), texts and petname intact. Forget removes the peer
+    /// without a trace.
+    #[test]
+    fn unverify_resets_trust_and_forget_removes_everything() {
+        let (mut a, mut b, b_fp, _a_fp) = linked_pair();
+        a.set_petname(b_fp, "bee");
+        a.verify_peer(b_fp);
+        a.start_dm_session(b_fp);
+        for _ in 0..8 {
+            for f in drain(&a) {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in drain(&b) {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+        }
+        a.send_dm(b_fp, "keep me");
+        assert!(a.peer_verified(&b_fp));
+        assert!(
+            a.store()
+                .dm_history(&b_fp, 10)
+                .iter()
+                .any(|d| crate::store::is_control_dm(&d.body)),
+            "precondition: control rows exist after the verify exchange"
+        );
+
+        a.unverify_peer(b_fp);
+        assert!(!a.peer_verified(&b_fp), "verified flag must reset");
+        let hist = a.store().dm_history(&b_fp, 10);
+        assert!(
+            !hist.iter().any(|d| crate::store::is_control_dm(&d.body)),
+            "control rows must be gone: {hist:?}"
+        );
+        assert!(
+            hist.iter().any(|d| d.body == b"keep me"),
+            "text history must survive unverify"
+        );
+        assert_eq!(
+            a.peer_petname(&b_fp).as_deref(),
+            Some("bee"),
+            "petname must survive unverify"
+        );
+
+        a.forget_peer(b_fp);
+        assert!(a.store().dm_history(&b_fp, 10).is_empty());
+        assert!(a.store().get_peer(&b_fp).is_none());
     }
 
     /// DMs (unlike the ephemeral Noise session) must be persisted so a thread survives a restart.
