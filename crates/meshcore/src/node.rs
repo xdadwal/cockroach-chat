@@ -207,7 +207,9 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         let channel = channels::normalize(channel);
         self.subscribed.insert(channel.clone());
         let now = self.clock.now_ms();
-        let ttl = self.cfg.origin_ttl(self.links.len());
+        let ttl = self
+            .cfg
+            .origin_ttl(MsgType::ChannelMessage, self.links.len());
 
         let payload = encode_channel(&channel, text, &self.cfg);
         let mut pkt = Packet::new(
@@ -246,7 +248,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         );
         let mut pkt = Packet::new(
             MsgType::Announce,
-            self.cfg.origin_ttl(self.links.len()),
+            self.cfg.origin_ttl(MsgType::Announce, self.links.len()),
             now,
             self.identity.eph_id(),
             None,
@@ -589,7 +591,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             return; // we don't know where this peer is right now
         };
         let now = self.clock.now_ms();
-        let ttl = self.cfg.origin_ttl(self.links.len());
+        let ttl = self.cfg.origin_ttl(msg_type, self.links.len());
         let mut pkt = Packet::new(
             msg_type,
             ttl,
@@ -1478,6 +1480,150 @@ mod tests {
                 |e| matches!(e, MeshEvent::DmReceived { text, .. } if text == "reply still works")
             ),
             "the healthy direction should keep working"
+        );
+    }
+
+    /// Decode captured outbound frames back into packets (single-fragment frames only, which
+    /// is all these small test packets produce).
+    fn decode_frames(frames: &[Vec<u8>]) -> Vec<Packet> {
+        let mut r = Reassembler::new(Tunables::default());
+        frames
+            .iter()
+            .filter_map(|f| r.ingest(f, 0).ok().flatten())
+            .filter_map(|bytes| Packet::decode(&bytes).ok())
+            .collect()
+    }
+
+    /// Every floodable type must originate with its own configured TTL (announce needs the
+    /// largest discovery radius; channels and DMs a smaller one).
+    #[test]
+    fn origination_ttl_is_per_message_type() {
+        let mut a = node(1);
+        let mut b = node(2);
+        a.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+        b.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+        for f in drain(&b) {
+            a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        let b_fp = a
+            .take_events()
+            .iter()
+            .find_map(|e| match e {
+                MeshEvent::PeerAppeared { fingerprint, .. } => Some(*fingerprint),
+                _ => None,
+            })
+            .expect("A should learn B");
+        let _ = drain(&a);
+
+        a.announce();
+        let pkts = decode_frames(&drain(&a));
+        assert!(
+            pkts.iter()
+                .any(|p| p.msg_type == MsgType::Announce && p.ttl == 15),
+            "announce should originate with TTL 15, got {:?}",
+            pkts.iter().map(|p| (p.msg_type, p.ttl)).collect::<Vec<_>>()
+        );
+
+        a.send_channel_message("#general", "hello");
+        let pkts = decode_frames(&drain(&a));
+        assert!(
+            pkts.iter()
+                .any(|p| p.msg_type == MsgType::ChannelMessage && p.ttl == 10),
+            "channel messages should originate with TTL 10"
+        );
+
+        // send_dm to a fresh peer emits the first Noise handshake packet — same TTL rule as DMs.
+        a.send_dm(b_fp, "hi");
+        let pkts = decode_frames(&drain(&a));
+        assert!(
+            pkts.iter()
+                .any(|p| p.msg_type == MsgType::NoiseHandshake && p.ttl == 10),
+            "noise handshakes should originate with TTL 10"
+        );
+    }
+
+    /// In a dense crowd (degree >= 6) origination TTLs clamp to the dense values.
+    #[test]
+    fn origination_ttl_clamps_when_dense() {
+        let mut a = node(1);
+        for link in 1..=6 {
+            a.on_transport_event(TransportEvent::LinkUp {
+                link,
+                mtu: 182,
+                peer_hint: None,
+            });
+        }
+        let _ = drain(&a);
+
+        a.announce();
+        let pkts = decode_frames(&drain(&a));
+        assert!(
+            pkts.iter()
+                .any(|p| p.msg_type == MsgType::Announce && p.ttl == 12),
+            "dense announce should clamp to TTL 12"
+        );
+
+        a.send_channel_message("#general", "hello");
+        let pkts = decode_frames(&drain(&a));
+        assert!(
+            pkts.iter()
+                .any(|p| p.msg_type == MsgType::ChannelMessage && p.ttl == 7),
+            "dense channel messages should clamp to TTL 7"
+        );
+    }
+
+    /// A relayed packet is decremented by exactly 1 — no clamp anywhere rejects the new
+    /// higher-than-7 TTLs (wire.rs carries TTL as a raw byte; relay only decrements).
+    #[test]
+    fn relay_decrements_high_ttl_by_one() {
+        let mut b = node(2);
+        b.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+        b.on_transport_event(TransportEvent::LinkUp {
+            link: 2,
+            mtu: 182,
+            peer_hint: None,
+        });
+        let _ = drain(&b);
+
+        // Hand-craft a TTL-15 announce from a third identity and feed it to B on link 1.
+        let id = LocalIdentity::from_seed(&[7u8; 32]);
+        let payload = encode_announce(
+            id.verifying_key().as_bytes(),
+            id.dh_public().as_bytes(),
+            "stranger",
+        );
+        let mut pkt = Packet::new(MsgType::Announce, 15, 1000, id.eph_id(), None, payload);
+        pkt.sign(id.signing_key());
+        for f in frag::split(&pkt.encode(), pkt.digest(), 182).unwrap() {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+
+        // Degree 2 => sparse => relay probability 1.0, so the rebroadcast is always scheduled.
+        // Fire it by advancing past the jitter window.
+        b.clock.advance(1000);
+        b.tick();
+        let relayed = decode_frames(&drain(&b));
+        assert!(
+            relayed
+                .iter()
+                .any(|p| p.msg_type == MsgType::Announce && p.ttl == 14),
+            "a TTL-15 packet must relay with TTL 14, got {:?}",
+            relayed
+                .iter()
+                .map(|p| (p.msg_type, p.ttl))
+                .collect::<Vec<_>>()
         );
     }
 

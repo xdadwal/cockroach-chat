@@ -3,6 +3,7 @@
 //! `docs/protocol.md` v0.1, which in turn come from `docs/research-brief.md`.
 
 use crate::clock::Millis;
+use crate::wire::MsgType;
 
 #[derive(Debug, Clone)]
 pub struct Tunables {
@@ -17,10 +18,16 @@ pub struct Tunables {
     pub reassembly_max_bytes: usize,
 
     // --- relay / flood control ---
-    /// Initial time-to-live (hops) for originated packets.
-    pub ttl_default: u8,
-    /// Clamp TTL to this when local node degree is high (dense crowd).
-    pub ttl_dense_clamp: u8,
+    /// Origination TTLs, per message type. Announce defines presence/discovery radius (largest);
+    /// channels serve a local crowd; DM covers DirectMessage AND NoiseHandshake (a DM cannot
+    /// exist without its handshake, so they must never diverge). The `_dense` variants apply at
+    /// local degree >= `dense_degree`, where flooding is cheap and airtime is scarce.
+    pub ttl_announce: u8,
+    pub ttl_announce_dense: u8,
+    pub ttl_channel: u8,
+    pub ttl_channel_dense: u8,
+    pub ttl_dm: u8,
+    pub ttl_dm_dense: u8,
     /// Node degree at/above which the dense clamp applies.
     pub dense_degree: usize,
     /// Relay jitter window [min, max] ms before rebroadcast.
@@ -71,8 +78,12 @@ impl Default for Tunables {
             reassembly_slots: 128,
             reassembly_timeout_ms: 30_000,
             reassembly_max_bytes: 1 << 20, // 1 MiB
-            ttl_default: 7,
-            ttl_dense_clamp: 5,
+            ttl_announce: 15,
+            ttl_announce_dense: 12,
+            ttl_channel: 10,
+            ttl_channel_dense: 7,
+            ttl_dm: 10,
+            ttl_dm_dense: 7,
             dense_degree: 6,
             jitter_min_ms: 10,
             jitter_max_ms: 220,
@@ -99,12 +110,78 @@ impl Default for Tunables {
 }
 
 impl Tunables {
-    /// The effective TTL to originate with, given the current local node degree.
-    pub fn origin_ttl(&self, degree: usize) -> u8 {
-        if degree >= self.dense_degree {
-            self.ttl_default.min(self.ttl_dense_clamp)
-        } else {
-            self.ttl_default
+    /// The TTL to originate a packet of `msg_type` with, given current local node degree.
+    /// Types not listed here are link-local (TTL 1) by design — list a type explicitly to
+    /// let it flood.
+    pub fn origin_ttl(&self, msg_type: MsgType, degree: usize) -> u8 {
+        let dense = degree >= self.dense_degree;
+        match msg_type {
+            MsgType::Announce => {
+                if dense {
+                    self.ttl_announce_dense
+                } else {
+                    self.ttl_announce
+                }
+            }
+            MsgType::ChannelMessage => {
+                if dense {
+                    self.ttl_channel_dense
+                } else {
+                    self.ttl_channel
+                }
+            }
+            MsgType::DirectMessage | MsgType::NoiseHandshake => {
+                if dense {
+                    self.ttl_dm_dense
+                } else {
+                    self.ttl_dm
+                }
+            }
+            _ => 1,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wire::MsgType;
+
+    #[test]
+    fn origin_ttl_is_per_message_type() {
+        let c = Tunables::default();
+        // Sparse (degree < dense_degree).
+        assert_eq!(c.origin_ttl(MsgType::Announce, 2), 15);
+        assert_eq!(c.origin_ttl(MsgType::ChannelMessage, 2), 10);
+        assert_eq!(c.origin_ttl(MsgType::DirectMessage, 2), 10);
+        assert_eq!(c.origin_ttl(MsgType::NoiseHandshake, 2), 10);
+    }
+
+    #[test]
+    fn origin_ttl_clamps_in_dense_crowds() {
+        let c = Tunables::default();
+        assert_eq!(c.origin_ttl(MsgType::Announce, 6), 12);
+        assert_eq!(c.origin_ttl(MsgType::ChannelMessage, 6), 7);
+        assert_eq!(c.origin_ttl(MsgType::DirectMessage, 6), 7);
+        assert_eq!(c.origin_ttl(MsgType::NoiseHandshake, 6), 7);
+    }
+
+    #[test]
+    fn handshake_ttl_always_equals_dm_ttl() {
+        // DMs cannot exist without a completed handshake, so the two must never diverge.
+        let c = Tunables::default();
+        for degree in [0, 3, 6, 12] {
+            assert_eq!(
+                c.origin_ttl(MsgType::NoiseHandshake, degree),
+                c.origin_ttl(MsgType::DirectMessage, degree),
+            );
+        }
+    }
+
+    #[test]
+    fn unlisted_types_default_to_link_local() {
+        // Safe-by-default: a future type must be listed explicitly to flood.
+        let c = Tunables::default();
+        assert_eq!(c.origin_ttl(MsgType::SyncRequest, 2), 1);
     }
 }
