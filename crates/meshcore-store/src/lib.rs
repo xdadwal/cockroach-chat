@@ -9,7 +9,7 @@
 
 use meshcore::clock::Millis;
 use meshcore::identity::Fingerprint;
-use meshcore::store::{PeerRecord, Store, StoredMessage};
+use meshcore::store::{PeerRecord, Store, StoredDm, StoredMessage};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::{Path, PathBuf};
 
@@ -63,7 +63,15 @@ impl SqliteStore {
                  packet BLOB NOT NULL,
                  queued_ms INTEGER NOT NULL
              );
-             CREATE INDEX IF NOT EXISTS idx_envelopes_recipient ON envelopes(recipient);",
+             CREATE INDEX IF NOT EXISTS idx_envelopes_recipient ON envelopes(recipient);
+             CREATE TABLE IF NOT EXISTS dms (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 peer BLOB NOT NULL,
+                 mine INTEGER NOT NULL,
+                 timestamp_ms INTEGER NOT NULL,
+                 body BLOB NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_dms_peer ON dms(peer, timestamp_ms);",
         )?;
         Ok(Self {
             conn,
@@ -219,6 +227,72 @@ impl Store for SqliteStore {
             .unwrap_or(None)
     }
 
+    fn list_peers(&self) -> Vec<PeerRecord> {
+        let mut stmt = match self
+            .conn
+            .prepare("SELECT fingerprint, petname, verified, last_eph, last_seen_ms FROM peers")
+        {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let out = match stmt.query_map([], |row| {
+            Ok(PeerRecord {
+                fingerprint: to_arr32(row.get::<_, Vec<u8>>(0)?),
+                petname: row.get(1)?,
+                verified: row.get::<_, i64>(2)? != 0,
+                last_eph: to_arr8(row.get::<_, Vec<u8>>(3)?),
+                last_seen_ms: row.get::<_, i64>(4)? as u64,
+            })
+        }) {
+            Ok(iter) => iter.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
+        };
+        out
+    }
+
+    fn put_dm(&mut self, dm: StoredDm) {
+        let _ = self.conn.execute(
+            "INSERT INTO dms (peer, mine, timestamp_ms, body) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                &dm.peer[..],
+                dm.mine as i64,
+                dm.timestamp_ms as i64,
+                dm.body
+            ],
+        );
+        // Keep only the newest `history_max` for this peer.
+        let _ = self.conn.execute(
+            "DELETE FROM dms WHERE peer = ?1 AND id NOT IN (
+                 SELECT id FROM dms WHERE peer = ?1 ORDER BY timestamp_ms DESC, id DESC LIMIT ?2
+             )",
+            params![&dm.peer[..], self.history_max as i64],
+        );
+    }
+
+    fn dm_history(&self, peer: &Fingerprint, limit: usize) -> Vec<StoredDm> {
+        // Newest `limit`, returned oldest-first (matching the in-memory store).
+        let sql = "SELECT peer, mine, timestamp_ms, body FROM (
+                       SELECT id, peer, mine, timestamp_ms, body FROM dms WHERE peer = ?1
+                       ORDER BY timestamp_ms DESC, id DESC LIMIT ?2
+                   ) ORDER BY timestamp_ms ASC, id ASC";
+        let mut stmt = match self.conn.prepare(sql) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+        let out = match stmt.query_map(params![&peer[..], limit as i64], |row| {
+            Ok(StoredDm {
+                peer: to_arr32(row.get::<_, Vec<u8>>(0)?),
+                mine: row.get::<_, i64>(1)? != 0,
+                timestamp_ms: row.get::<_, i64>(2)? as u64,
+                body: row.get(3)?,
+            })
+        }) {
+            Ok(iter) => iter.filter_map(Result::ok).collect(),
+            Err(_) => Vec::new(),
+        };
+        out
+    }
+
     fn queue_envelope(&mut self, recipient: Fingerprint, packet_bytes: Vec<u8>, now_ms: Millis) {
         let now = now_ms as i64;
         if self.envelope_ttl_ms > 0 {
@@ -267,7 +341,7 @@ impl Store for SqliteStore {
         // Clear every row and reclaim (overwrite) the freed pages. The stronger guarantee is the
         // platform destroying the DB key, which leaves the file as unrecoverable ciphertext.
         let _ = self.conn.execute_batch(
-            "DELETE FROM messages; DELETE FROM peers; DELETE FROM envelopes; VACUUM;",
+            "DELETE FROM messages; DELETE FROM peers; DELETE FROM dms; DELETE FROM envelopes; VACUUM;",
         );
     }
 }
@@ -344,6 +418,46 @@ mod tests {
         let peer = s.get_peer(&[9; 32]).unwrap();
         assert_eq!(peer.petname.as_deref(), Some("ava"));
         assert!(peer.verified);
+    }
+
+    #[test]
+    fn dms_and_peer_list_survive_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = [5u8; 32];
+        {
+            let mut s = open(dir.path(), &key);
+            s.put_dm(StoredDm {
+                peer: [3; 32],
+                mine: true,
+                timestamp_ms: 100,
+                body: b"north gate".to_vec(),
+            });
+            s.put_dm(StoredDm {
+                peer: [3; 32],
+                mine: false,
+                timestamp_ms: 200,
+                body: b"copy that".to_vec(),
+            });
+            s.upsert_peer(PeerRecord {
+                fingerprint: [3; 32],
+                petname: Some("ben".into()),
+                verified: true,
+                last_eph: [1; 8],
+                last_seen_ms: 9,
+            });
+        } // close — force a real round-trip through the encrypted file
+
+        let s = open(dir.path(), &key);
+        // Verified contacts reload without a live announce.
+        assert_eq!(s.list_peers().len(), 1);
+        assert!(s.list_peers()[0].verified);
+        // DM thread survives the restart, oldest-first.
+        let dms = s.dm_history(&[3; 32], 10);
+        assert_eq!(dms.len(), 2);
+        assert_eq!(dms[0].body, b"north gate");
+        assert!(dms[0].mine);
+        assert_eq!(dms[1].body, b"copy that");
+        assert!(!dms[1].mine);
     }
 
     #[test]

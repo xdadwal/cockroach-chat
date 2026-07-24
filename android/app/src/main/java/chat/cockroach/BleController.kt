@@ -117,6 +117,9 @@ class BleController private constructor(context: Context) {
         joinChannel(ANNOUNCE, silent = true)
         for (name in PUBLIC_CHANNELS) joinChannel(name, silent = true)
         for (ch in listOf(ANNOUNCE) + PUBLIC_CHANNELS.map { normalizeChannel(it) }) restoreHistory(ch, n)
+        // Reload verified contacts + their DM threads from the encrypted store, so they survive a
+        // stop/restart (or process death) instead of vanishing until each peer re-announces.
+        restoreContacts(n)
 
         log.add("node up — eph ${n.ephId().take(8)}")
         t.start()
@@ -136,22 +139,39 @@ class BleController private constructor(context: Context) {
     }
 
     private fun restoreHistory(ch: String, n: FfiMeshNode) {
+        // Authoritative reload: clear first so a restart doesn't duplicate the retained in-memory list.
+        val list = channel(ch)
+        list.clear()
         for (m in n.channelHistory(ch, 200u)) {
             val sender = if (m.mine) "you" else senderName(m.sender)
-            channel(ch).add(ChatMessage(m.body, mine = m.mine, verified = true, sender = sender, timestampMs = m.timestampMs.toLong()))
+            list.add(ChatMessage(m.body, mine = m.mine, verified = true, sender = sender, timestampMs = m.timestampMs.toLong()))
+        }
+    }
+
+    /** Reload persisted peers (with verified/petname) and each one's DM thread from the store. */
+    private fun restoreContacts(n: FfiMeshNode) {
+        peers.clear()
+        for (p in n.listPeers()) {
+            val name = n.peerPetname(p.fingerprint) ?: p.petname ?: p.fingerprint.take(8)
+            upsertPeer(p.fingerprint, name, verified = p.verified)
+            val t = thread(p.fingerprint)
+            t.clear()
+            for (dm in n.dmHistory(p.fingerprint, 200u)) {
+                t.add(ChatMessage(dm.body, mine = dm.mine, verified = true, sender = if (dm.mine) "you" else name, timestampMs = dm.timestampMs.toLong()))
+            }
         }
     }
 
     /** Tear the mesh down WITHOUT destroying data. */
     fun stop() {
+        // Tear down only the radio and core node. Do NOT wipe the display state (contacts, channel
+        // and DM history): it is persisted and reloaded on the next start. Clearing it here is what
+        // made verified contacts and messages vanish on mesh-off. `running=false` switches the UI to
+        // the mesh-off screen; the lists stay intact for when the mesh comes back.
         transport?.stop()
         transport = null
         node = null
         running.value = false
-        peers.clear()
-        dmThreads.clear()
-        channelMessages.clear()
-        channels.clear()
         log.add("mesh stopped")
     }
 
