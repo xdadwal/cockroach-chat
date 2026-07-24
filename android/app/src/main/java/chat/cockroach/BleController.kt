@@ -17,7 +17,14 @@ import uniffi.meshcore_ffi.FfiMeshNode
 import java.io.File
 import java.security.MessageDigest
 
-data class Peer(val fp: String, val name: String, val verified: Boolean)
+data class Peer(
+    val fp: String,
+    val name: String,
+    val verified: Boolean,
+    /** True once an inbound verification control message (notice or ack) proves the peer's side
+     *  of the encrypted channel works — the "confirmed both ends" badge state. */
+    val confirmed: Boolean = false,
+)
 
 /**
  * Drives the REAL BLE transport on-device plus the whole app model the UI observes: the public
@@ -148,17 +155,23 @@ class BleController private constructor(context: Context) {
         }
     }
 
-    /** Reload persisted peers (with verified/petname) and each one's DM thread from the store. */
+    /** Reload persisted peers (with verified/petname) and each one's DM thread from the store.
+     *  `confirmed` is derived, not stored: any inbound verification control row proves the
+     *  peer's side of the channel worked. */
     private fun restoreContacts(n: FfiMeshNode) {
         peers.clear()
         for (p in n.listPeers()) {
             val name = n.peerPetname(p.fingerprint) ?: p.petname ?: p.fingerprint.take(8)
-            upsertPeer(p.fingerprint, name, verified = p.verified)
             val t = thread(p.fingerprint)
             t.clear()
+            var confirmed = false
             for (dm in n.dmHistory(p.fingerprint, 200u)) {
-                t.add(ChatMessage(dm.body, mine = dm.mine, verified = true, sender = if (dm.mine) "you" else name, timestampMs = dm.timestampMs.toLong()))
+                val kind = dm.kind.toInt()
+                if (!dm.mine && kind != KIND_TEXT) confirmed = true
+                val sender = if (kind != KIND_TEXT) name else if (dm.mine) "you" else name
+                t.add(ChatMessage(dm.body, mine = dm.mine, verified = true, sender = sender, timestampMs = dm.timestampMs.toLong(), kind = kind))
             }
+            upsertPeer(p.fingerprint, name, verified = p.verified, confirmed = confirmed)
         }
     }
 
@@ -290,6 +303,34 @@ class BleController private constructor(context: Context) {
         // Establish the encrypted session now so the other device also flips to verified immediately.
         node?.startDmSession(peerFp)
         refreshPeer(peerFp)
+        // Show our own verify-notice in the thread right away (the core sends it as soon as the
+        // session is ready; the peer's ack arriving is what flips the badge to "confirmed").
+        thread(peerFp).add(ChatMessage("", mine = true, verified = true, sender = peerName(peerFp), timestampMs = now(), kind = KIND_NOTICE))
+    }
+
+    /** Undo a verification: badge resets, chat history and petname survive; re-scan to verify. */
+    fun unverify(peerFp: String) {
+        val n = node ?: return
+        n.unverifyPeer(peerFp)
+        // Rebuild the thread from the store (control rows are gone) and hard-reset the badge —
+        // upsertPeer is deliberately monotonic, so downgrade explicitly.
+        val name = peerName(peerFp)
+        val t = thread(peerFp)
+        t.clear()
+        for (dm in n.dmHistory(peerFp, 200u)) {
+            t.add(ChatMessage(dm.body, mine = dm.mine, verified = true, sender = if (dm.mine) "you" else name, timestampMs = dm.timestampMs.toLong(), kind = dm.kind.toInt()))
+        }
+        val idx = peers.indexOfFirst { it.fp == peerFp }
+        if (idx >= 0) peers[idx] = peers[idx].copy(verified = false, confirmed = false)
+        log.add("unverified ${peerFp.take(8)}")
+    }
+
+    /** Forget a contact entirely: peer record, DM thread, session state. */
+    fun forget(peerFp: String) {
+        node?.forgetPeer(peerFp)
+        peers.removeAll { it.fp == peerFp }
+        dmThreads.remove(peerFp)
+        log.add("removed ${peerFp.take(8)}")
     }
 
     fun setPetname(peerFp: String, name: String) {
@@ -328,13 +369,16 @@ class BleController private constructor(context: Context) {
                     upsertPeer(ev.fingerprint, name, verified = n.peerVerified(ev.fingerprint))
                 }
                 is FfiEvent.DirectMessage -> {
-                    // Once an identity-bound DM exists, both sides treat the peer as verified (a
-                    // deliberate UX: exchanging an E2E-bound DM is itself a trust signal).
-                    upsertPeer(ev.sender, peerName(ev.sender), verified = true)
-                    thread(ev.sender).add(ChatMessage(ev.text, mine = false, verified = true, sender = peerName(ev.sender), timestampMs = now()))
+                    val kind = ev.kind.toInt()
+                    val name = peerName(ev.sender)
+                    // The badge follows the persisted verified flag (set only by a QR scan); an
+                    // inbound control message (notice or ack) is live proof the peer's side of
+                    // the encrypted channel works -> confirmed.
+                    upsertPeer(ev.sender, name, verified = n.peerVerified(ev.sender), confirmed = kind == KIND_NOTICE || kind == KIND_ACK)
+                    thread(ev.sender).add(ChatMessage(ev.text, mine = false, verified = true, sender = name, timestampMs = now(), kind = kind))
                 }
                 is FfiEvent.DmSession -> {
-                    upsertPeer(ev.peer, peerName(ev.peer), verified = ev.verified)
+                    upsertPeer(ev.peer, peerName(ev.peer), verified = n.peerVerified(ev.peer))
                     log.add("DM session ${if (ev.verified) "verified" else "REJECTED"}: ${ev.peer.take(8)}")
                 }
                 is FfiEvent.PeerLost -> log.add("link lost")
@@ -352,15 +396,16 @@ class BleController private constructor(context: Context) {
     private fun senderName(eph: String): String =
         ephToFp[eph]?.let { peerName(it) } ?: eph.take(6)
 
-    private fun upsertPeer(fp: String, name: String, verified: Boolean) {
+    private fun upsertPeer(fp: String, name: String, verified: Boolean, confirmed: Boolean = false) {
         val idx = peers.indexOfFirst { it.fp == fp }
         if (idx >= 0) {
             val existing = peers[idx]
-            peers[idx] = existing.copy(name = name, verified = existing.verified || verified)
+            peers[idx] = existing.copy(name = name, verified = existing.verified || verified, confirmed = existing.confirmed || confirmed)
         } else {
-            peers.add(Peer(fp, name, verified))
+            peers.add(Peer(fp, name, verified, confirmed))
         }
     }
+
 
     // Mirror the core's normalization exactly (lower-case, leading '#' implied) so the channel we
     // join/send matches the `channel` field on inbound messages. Chars like '+' are preserved.
@@ -376,6 +421,11 @@ class BleController private constructor(context: Context) {
     companion object {
         const val ANNOUNCE = "#announce"
         const val ANNOUNCE_COOLDOWN_S = 60
+
+        /** DM kinds mirrored from the core: 0 text, 1 verify-notice, 2 verify-ack. */
+        const val KIND_TEXT = 0
+        const val KIND_NOTICE = 1
+        const val KIND_ACK = 2
 
         // Lenient public-channel rate limit: at most CHANNEL_BURST messages per CHANNEL_WINDOW_MS.
         const val CHANNEL_BURST = 2
