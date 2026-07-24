@@ -13,6 +13,14 @@
 //! responder <-  msg2 (e, ee, s, es)
 //! initiator ->  msg3 (s, se)          both sides now in transport mode
 //! ```
+//!
+//! Transport messages carry an explicit nonce: `nonce(8, BE) || ciphertext`. Noise's own transport
+//! nonces are implicit counters, which assume a reliable, ordered channel — on a lossy flood mesh a
+//! single dropped ciphertext would desync the counters and permanently break that direction (the
+//! receiver can still *send* fine, so the failure is invisibly one-directional). Sending the
+//! counter on the wire (as WireGuard does) turns a loss into a skippable gap. The receiver accepts
+//! only counters `>=` its next expected one, so replayed or flood-duplicated ciphertexts are
+//! rejected; late out-of-order arrivals are dropped rather than delivered twice.
 
 use crate::error::{Error, Result};
 use snow::params::NoiseParams;
@@ -118,27 +126,50 @@ impl NoiseSession {
         self.maybe_transition()
     }
 
-    /// Encrypt a plaintext DM (transport mode only).
+    /// Encrypt a plaintext DM (transport mode only). Output is `nonce(8, BE) || ciphertext`.
     pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<Vec<u8>> {
-        let mut buf = vec![0u8; plaintext.len() + 64];
         match &mut self.inner {
             Inner::Transport(ts) => {
+                let nonce = ts.sending_nonce();
+                let mut buf = vec![0u8; plaintext.len() + 64];
                 let n = ts.write_message(plaintext, &mut buf).map_err(map)?;
-                buf.truncate(n);
-                Ok(buf)
+                let mut out = Vec::with_capacity(8 + n);
+                out.extend_from_slice(&nonce.to_be_bytes());
+                out.extend_from_slice(&buf[..n]);
+                Ok(out)
             }
             _ => Err(Error::Noise("encrypt before handshake complete".into())),
         }
     }
 
-    /// Decrypt a DM ciphertext (transport mode only).
-    pub fn decrypt(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>> {
-        let mut buf = vec![0u8; ciphertext.len() + 64];
+    /// Decrypt a `nonce(8, BE) || ciphertext` DM payload (transport mode only). Tolerates gaps in
+    /// the nonce sequence (lost messages); rejects replays and late out-of-order arrivals.
+    pub fn decrypt(&mut self, payload: &[u8]) -> Result<Vec<u8>> {
         match &mut self.inner {
             Inner::Transport(ts) => {
-                let n = ts.read_message(ciphertext, &mut buf).map_err(map)?;
-                buf.truncate(n);
-                Ok(buf)
+                if payload.len() < 8 {
+                    return Err(Error::Noise("dm payload too short".into()));
+                }
+                let nonce = u64::from_be_bytes(payload[..8].try_into().unwrap());
+                let expected = ts.receiving_nonce();
+                if nonce < expected {
+                    return Err(Error::Noise("replayed or out-of-order dm nonce".into()));
+                }
+                let ciphertext = &payload[8..];
+                let mut buf = vec![0u8; ciphertext.len() + 64];
+                ts.set_receiving_nonce(nonce);
+                match ts.read_message(ciphertext, &mut buf) {
+                    Ok(n) => {
+                        buf.truncate(n);
+                        Ok(buf)
+                    }
+                    Err(e) => {
+                        // An unauthenticated (forged/corrupt) nonce must not advance our window,
+                        // or an attacker could wedge the session with one junk packet.
+                        ts.set_receiving_nonce(expected);
+                        Err(map(e))
+                    }
+                }
             }
             _ => Err(Error::Noise("decrypt before handshake complete".into())),
         }
@@ -221,6 +252,42 @@ mod tests {
         let mut ct = a.encrypt(b"authentic").unwrap();
         ct[0] ^= 0xff;
         assert!(b.decrypt(&ct).is_err());
+    }
+
+    #[test]
+    fn decrypt_tolerates_lost_messages() {
+        // A lossy mesh can drop any single ciphertext. The explicit nonce lets the receiver skip
+        // the gap instead of desyncing forever (the original one-directional-DM field bug).
+        let (mut a, mut b, _, _) = establish();
+        let ct1 = a.encrypt(b"one").unwrap();
+        let _ct2_lost = a.encrypt(b"two (never delivered)").unwrap();
+        let ct3 = a.encrypt(b"three").unwrap();
+
+        assert_eq!(b.decrypt(&ct1).unwrap(), b"one");
+        assert_eq!(b.decrypt(&ct3).unwrap(), b"three");
+    }
+
+    #[test]
+    fn replayed_ciphertext_rejected() {
+        // Flood routing duplicates frames; the same ciphertext must not deliver twice.
+        let (mut a, mut b, _, _) = establish();
+        let ct = a.encrypt(b"once only").unwrap();
+        assert_eq!(b.decrypt(&ct).unwrap(), b"once only");
+        assert!(b.decrypt(&ct).is_err());
+    }
+
+    #[test]
+    fn forged_nonce_does_not_wedge_session() {
+        // A junk packet with a huge claimed nonce must fail authentication AND leave the receive
+        // window untouched, so genuine traffic still decrypts.
+        let (mut a, mut b, _, _) = establish();
+        let genuine = a.encrypt(b"real").unwrap();
+
+        let mut forged = genuine.clone();
+        forged[..8].copy_from_slice(&u64::MAX.to_be_bytes());
+        assert!(b.decrypt(&forged).is_err());
+
+        assert_eq!(b.decrypt(&genuine).unwrap(), b"real");
     }
 
     #[test]
