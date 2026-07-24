@@ -12,6 +12,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -398,13 +399,17 @@ private fun ChannelRow(ble: BleController, name: String, onOpen: (String) -> Uni
 @Composable
 private fun ColumnScope.VerifiedTab(ble: BleController, onOpenDm: (String) -> Unit) {
     val s = LocalStrings.current
+    var actionPeer by remember { mutableStateOf<Peer?>(null) }
+    var confirmRemove by remember { mutableStateOf<Peer?>(null) }
+    actionPeer?.let { p -> PeerActionsDialog(p, onUnverify = { ble.unverify(p.fp); actionPeer = null }, onRemove = { actionPeer = null; confirmRemove = p }, onDismiss = { actionPeer = null }) }
+    confirmRemove?.let { p -> RemoveConfirmDialog(p, onConfirm = { ble.forget(p.fp); confirmRemove = null }, onDismiss = { confirmRemove = null }) }
     Row(Modifier.fillMaxWidth().background(CcVerified.copy(alpha = 0.08f)).border(1.dp, CcVerified.copy(alpha = 0.22f)).padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
         ShieldBadge(true, 14.dp)
         CcText(s.dmTabBanner, 11, FontWeight.SemiBold, CcVerifiedText)
     }
     val verified = ble.dmPeers
     LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
-        items(verified) { p -> PeerListRow(ble, p, trailing = "DM", onClick = { onOpenDm(p.fp) }) }
+        items(verified) { p -> PeerListRow(ble, p, trailing = "DM", onClick = { onOpenDm(p.fp) }, onLongClick = { actionPeer = p }) }
         if (verified.isEmpty()) {
             item {
                 Box(Modifier.fillMaxWidth().padding(16.dp).dashedBorder(CcInkMute(0.16f), 13.dp).padding(16.dp), contentAlignment = Alignment.Center) {
@@ -446,10 +451,50 @@ private fun ChannelScreen(ble: BleController, name: String, onBack: () -> Unit) 
 // --- peer row (used by the DM list) -------------------------------------------------------------
 
 @Composable
-private fun PeerListRow(ble: BleController, p: Peer, trailing: String, onClick: () -> Unit) {
+private fun PeerActionsDialog(p: Peer, onUnverify: () -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit) {
+    val s = LocalStrings.current
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CcElevated,
+        title = { CcText("${s.peerActionsTitle} · ${p.name}", 16, FontWeight.ExtraBold, CcInk) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                CcText(s.actionUnverifyBody, 12, FontWeight.Medium, CcInkMute(0.7f), lineHeightMul = 1.4)
+                CcPrimaryButton(s.actionUnverify, onUnverify, Modifier.fillMaxWidth())
+                CcText(s.actionRemoveBody, 12, FontWeight.Medium, CcInkMute(0.7f), lineHeightMul = 1.4)
+                CcPrimaryButton(s.actionRemove, onRemove, Modifier.fillMaxWidth(), color = CcUnverified)
+            }
+        },
+        confirmButton = {},
+        dismissButton = { CcSecondaryButton(s.actionCancel, onDismiss, Modifier.fillMaxWidth()) },
+    )
+}
+
+@Composable
+private fun RemoveConfirmDialog(p: Peer, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val s = LocalStrings.current
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CcElevated,
+        title = { CcText("${s.actionRemove} · ${p.name}", 16, FontWeight.ExtraBold, CcInk) },
+        text = { CcText(s.actionRemoveBody, 12, FontWeight.Medium, CcInkMute(0.7f), lineHeightMul = 1.4) },
+        confirmButton = { CcPrimaryButton(s.actionRemoveConfirm, onConfirm, Modifier.fillMaxWidth(), color = CcUnverified) },
+        dismissButton = { CcSecondaryButton(s.actionCancel, onDismiss, Modifier.fillMaxWidth()) },
+    )
+}
+
+@Composable
+private fun PeerListRow(ble: BleController, p: Peer, trailing: String, onClick: () -> Unit, onLongClick: (() -> Unit)? = null) {
     val s = LocalStrings.current
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).bottomHairline().padding(vertical = 11.dp, horizontal = 6.dp),
+        Modifier.fillMaxWidth()
+            .pointerInput(p.fp, onLongClick) {
+                detectTapGestures(
+                    onTap = { onClick() },
+                    onLongPress = { onLongClick?.invoke() },
+                )
+            }
+            .bottomHairline().padding(vertical = 11.dp, horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp),
     ) {
         if (p.verified) {
@@ -465,7 +510,7 @@ private fun PeerListRow(ble: BleController, p: Peer, trailing: String, onClick: 
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (p.verified) {
                     CcText(p.name, 15, FontWeight.ExtraBold, CcInk)
-                    ShieldBadge(true, 13.dp)
+                    ShieldBadge(true, 13.dp, confirmed = p.confirmed)
                 } else {
                     CcText("\"${p.name}\"", 13, FontWeight.SemiBold, CcInkMute(0.72f), mono = true)
                 }
@@ -501,9 +546,14 @@ private fun DmScreen(ble: BleController, fp: String, onBack: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     CcText(name, 16, FontWeight.ExtraBold, CcInk)
-                    if (peer?.verified == true) ShieldBadge(true, 13.dp)
+                    if (peer?.verified == true) ShieldBadge(true, 13.dp, confirmed = peer.confirmed)
                 }
-                CcText(if (peer?.verified == true) s.dmVerifiedSubtitle else s.dmNotVerified, 10, FontWeight.Medium, if (peer?.verified == true) CcVerifiedText else CcUnverifiedText, mono = true)
+                val (subtitle, subColor) = when {
+                    peer?.verified == true && peer.confirmed -> s.dmConfirmedSubtitle to CcVerifiedText
+                    peer?.verified == true -> s.dmAwaitingAck to CcAmberText
+                    else -> s.dmNotVerified to CcUnverifiedText
+                }
+                CcText(subtitle, 10, FontWeight.Medium, subColor, mono = true)
             }
         }
         E2EBanner()

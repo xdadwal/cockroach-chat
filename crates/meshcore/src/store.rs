@@ -73,8 +73,21 @@ pub trait Store {
     fn queue_envelope(&mut self, recipient: Fingerprint, packet_bytes: Vec<u8>, now_ms: Millis);
     fn take_envelopes(&mut self, recipient: &Fingerprint) -> Vec<Vec<u8>>;
 
+    /// Remove a peer's record entirely (petname, verified flag, everything). DMs are separate —
+    /// pair with [`Store::delete_dms`] for a full "forget this contact".
+    fn delete_peer(&mut self, fp: &Fingerprint);
+    /// Delete a peer's DM rows. With `only_control` true, only verification control rows (a bare
+    /// kind byte 0x01/0x02 as the body) are removed — used by "unverify" so the derived
+    /// confirmed-both-ends state resets while chat history survives.
+    fn delete_dms(&mut self, fp: &Fingerprint, only_control: bool);
+
     /// Destroy everything. After this, no plaintext or key material remains.
     fn panic_wipe(&mut self);
+}
+
+/// Whether a stored DM row is a verification control row (bare kind byte 1 or 2).
+pub fn is_control_dm(body: &[u8]) -> bool {
+    body.len() == 1 && (body[0] == 1 || body[0] == 2)
 }
 
 #[derive(Default)]
@@ -212,6 +225,20 @@ impl Store for MemoryStore {
             .remove(recipient)
             .map(|q| q.into_iter().map(|e| e.packet_bytes).collect())
             .unwrap_or_default()
+    }
+
+    fn delete_peer(&mut self, fp: &Fingerprint) {
+        self.peers.remove(fp);
+    }
+
+    fn delete_dms(&mut self, fp: &Fingerprint, only_control: bool) {
+        if only_control {
+            if let Some(thread) = self.dms.get_mut(fp) {
+                thread.retain(|d| !is_control_dm(&d.body));
+            }
+        } else {
+            self.dms.remove(fp);
+        }
     }
 
     fn panic_wipe(&mut self) {

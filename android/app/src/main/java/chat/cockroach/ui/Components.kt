@@ -257,13 +257,21 @@ fun ScanGlyph(color: Color, size: Dp = 20.dp) {
 // --- trust badge (inline, message header) -----------------------------------------------------
 
 @Composable
-fun ShieldBadge(verified: Boolean, size: Dp = 13.dp) {
-    if (verified) {
-        Box(Modifier.size(size).clip(RoundedCornerShape(50)).background(CcVerified), contentAlignment = Alignment.Center) {
+fun ShieldBadge(verified: Boolean, size: Dp = 13.dp, confirmed: Boolean = false) {
+    when {
+        // Confirmed both ends: the solid check gains an outer ring — the peer's phone proved the
+        // encrypted channel works in both directions (verification ack received).
+        confirmed -> Box(
+            Modifier.size(size).border(1.5.dp, CcVerifiedText, RoundedCornerShape(50)).padding(2.dp)
+                .clip(RoundedCornerShape(50)).background(CcVerified),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.Check, null, tint = CcOnAmber, modifier = Modifier.size(size * 0.6f))
+        }
+        verified -> Box(Modifier.size(size).clip(RoundedCornerShape(50)).background(CcVerified), contentAlignment = Alignment.Center) {
             Icon(Icons.Filled.Check, null, tint = CcOnAmber, modifier = Modifier.size(size * 0.72f))
         }
-    } else {
-        Box(Modifier.size(size).dashedBorder(CcUnverified, size / 2, 1.2.dp))
+        else -> Box(Modifier.size(size).dashedBorder(CcUnverified, size / 2, 1.2.dp))
     }
 }
 
@@ -350,6 +358,26 @@ fun E2EBanner() {
 @Composable
 fun MessageBubble(msg: chat.cockroach.ChatMessage, modifier: Modifier = Modifier) {
     val s = LocalStrings.current
+    // Verification control messages render as centered system lines, not chat bubbles.
+    // For these, `sender` always carries the PEER's display name (even on `mine` rows).
+    if (msg.kind != 0) {
+        val text = when {
+            msg.kind == 1 && msg.mine -> s.sysVerifyNoticeMine.format(msg.sender)
+            msg.kind == 1 -> s.sysVerifyNoticeTheirs.format(msg.sender)
+            msg.kind == 2 && msg.mine -> s.sysVerifyAckMine.format(msg.sender)
+            else -> s.sysVerifyAckTheirs.format(msg.sender)
+        }
+        Box(modifier.fillMaxWidth().padding(vertical = 2.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.clip(RoundedCornerShape(9.dp)).background(CcVerified.copy(alpha = 0.10f))
+                    .border(1.dp, CcVerified.copy(alpha = 0.25f), RoundedCornerShape(9.dp))
+                    .padding(horizontal = 12.dp, vertical = 7.dp),
+            ) {
+                CcText(text, 11, FontWeight.SemiBold, CcVerifiedText, align = androidx.compose.ui.text.style.TextAlign.Center, lineHeightMul = 1.35)
+            }
+        }
+        return
+    }
     Column(modifier.fillMaxWidth(), horizontalAlignment = if (msg.mine) Alignment.End else Alignment.Start) {
         if (msg.mine) {
             Column(

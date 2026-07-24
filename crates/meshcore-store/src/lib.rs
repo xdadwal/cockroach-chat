@@ -337,6 +337,26 @@ impl Store for SqliteStore {
         out
     }
 
+    fn delete_peer(&mut self, fp: &Fingerprint) {
+        let _ = self
+            .conn
+            .execute("DELETE FROM peers WHERE fingerprint = ?1", params![&fp[..]]);
+    }
+
+    fn delete_dms(&mut self, fp: &Fingerprint, only_control: bool) {
+        if only_control {
+            // Control rows are exactly one byte: kind 0x01 (verify-notice) or 0x02 (verify-ack).
+            let _ = self.conn.execute(
+                "DELETE FROM dms WHERE peer = ?1 AND length(body) = 1 AND (body = x'01' OR body = x'02')",
+                params![&fp[..]],
+            );
+        } else {
+            let _ = self
+                .conn
+                .execute("DELETE FROM dms WHERE peer = ?1", params![&fp[..]]);
+        }
+    }
+
     fn panic_wipe(&mut self) {
         // Clear every row and reclaim (overwrite) the freed pages. The stronger guarantee is the
         // platform destroying the DB key, which leaves the file as unrecoverable ciphertext.
@@ -393,6 +413,50 @@ mod tests {
             100,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn delete_dms_control_only_and_full_plus_delete_peer() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = [3u8; 32];
+        let mut s = open(dir.path(), &key);
+        let fp = [8u8; 32];
+        s.upsert_peer(PeerRecord {
+            fingerprint: fp,
+            petname: Some("ovi".into()),
+            verified: true,
+            last_eph: [2; 8],
+            last_seen_ms: 100,
+        });
+        s.put_dm(StoredDm {
+            peer: fp,
+            mine: true,
+            timestamp_ms: 100,
+            body: b"keep this text".to_vec(),
+        });
+        s.put_dm(StoredDm {
+            peer: fp,
+            mine: true,
+            timestamp_ms: 101,
+            body: vec![1], // verify-notice control row
+        });
+        s.put_dm(StoredDm {
+            peer: fp,
+            mine: false,
+            timestamp_ms: 102,
+            body: vec![2], // verify-ack control row
+        });
+
+        s.delete_dms(&fp, true);
+        let hist = s.dm_history(&fp, 10);
+        assert_eq!(hist.len(), 1, "only the text row survives: {hist:?}");
+        assert_eq!(hist[0].body, b"keep this text");
+
+        s.delete_dms(&fp, false);
+        assert!(s.dm_history(&fp, 10).is_empty());
+
+        s.delete_peer(&fp);
+        assert!(s.get_peer(&fp).is_none());
     }
 
     #[test]

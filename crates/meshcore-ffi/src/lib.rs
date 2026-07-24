@@ -107,6 +107,12 @@ impl Store for FfiStore {
     fn take_envelopes(&mut self, recipient: &Fingerprint) -> Vec<Vec<u8>> {
         delegate!(self, take_envelopes(recipient))
     }
+    fn delete_peer(&mut self, fp: &Fingerprint) {
+        delegate!(self, delete_peer(fp))
+    }
+    fn delete_dms(&mut self, fp: &Fingerprint, only_control: bool) {
+        delegate!(self, delete_dms(fp, only_control))
+    }
     fn panic_wipe(&mut self) {
         delegate!(self, panic_wipe())
     }
@@ -134,6 +140,9 @@ pub enum FfiEvent {
     DirectMessage {
         sender: String,
         text: String,
+        /// 0 = text, 1 = verify-notice ("sender verified you in person"),
+        /// 2 = verify-ack (automatic reply proving the channel works both ways).
+        kind: u8,
     },
     /// A Noise session with a peer completed (`verified` false means identity binding failed).
     DmSession {
@@ -166,6 +175,8 @@ pub struct FfiDmMessage {
     pub body: String,
     pub timestamp_ms: u64,
     pub mine: bool,
+    /// 0 = text, 1 = verify-notice, 2 = verify-ack (see `FfiEvent::DirectMessage::kind`).
+    pub kind: u8,
 }
 
 /// The FFI handle to a running mesh node.
@@ -283,10 +294,24 @@ impl FfiMeshNode {
         node.store()
             .dm_history(&fp, limit as usize)
             .into_iter()
-            .map(|d| FfiDmMessage {
-                body: String::from_utf8_lossy(&d.body).to_string(),
-                timestamp_ms: d.timestamp_ms,
-                mine: d.mine,
+            .map(|d| {
+                // Control rows persist as a bare kind byte; text rows are bare UTF-8 (no text
+                // ever starts with control bytes 0x01/0x02, so this cannot misfire on legacy
+                // pre-framing rows either).
+                let kind = match d.body.first() {
+                    Some(&k) if (1..=2).contains(&k) && d.body.len() == 1 => k,
+                    _ => 0,
+                };
+                FfiDmMessage {
+                    body: if kind == 0 {
+                        String::from_utf8_lossy(&d.body).to_string()
+                    } else {
+                        String::new()
+                    },
+                    timestamp_ms: d.timestamp_ms,
+                    mine: d.mine,
+                    kind,
+                }
             })
             .collect()
     }
@@ -323,6 +348,20 @@ impl FfiMeshNode {
     pub fn verify_peer(&self, peer_fingerprint: String) {
         if let Some(fp) = decode_hex32(&peer_fingerprint) {
             self.inner.lock().unwrap().verify_peer(fp);
+        }
+    }
+
+    /// Undo an in-person verification (keeps chat history and petname); re-scan to verify again.
+    pub fn unverify_peer(&self, peer_fingerprint: String) {
+        if let Some(fp) = decode_hex32(&peer_fingerprint) {
+            self.inner.lock().unwrap().unverify_peer(fp);
+        }
+    }
+
+    /// Forget a contact entirely: peer record, DM thread, and live session state.
+    pub fn forget_peer(&self, peer_fingerprint: String) {
+        if let Some(fp) = decode_hex32(&peer_fingerprint) {
+            self.inner.lock().unwrap().forget_peer(fp);
         }
     }
 
@@ -425,10 +464,14 @@ fn to_ffi(e: MeshEvent) -> Option<FfiEvent> {
         }),
         MeshEvent::PeerLost { link } => Some(FfiEvent::PeerLost { link }),
         MeshEvent::DmReceived {
-            sender_fp, text, ..
+            sender_fp,
+            text,
+            kind,
+            ..
         } => Some(FfiEvent::DirectMessage {
             sender: hex(&sender_fp),
             text,
+            kind,
         }),
         MeshEvent::DmSession { peer_fp, verified } => Some(FfiEvent::DmSession {
             peer: hex(&peer_fp),
