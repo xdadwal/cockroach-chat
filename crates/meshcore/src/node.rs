@@ -1252,8 +1252,16 @@ mod tests {
     fn dm_recovers_after_one_side_restarts_midsession() {
         let mut a = node(1);
         let mut b = node(2);
-        a.on_transport_event(TransportEvent::LinkUp { link: 1, mtu: 182, peer_hint: None });
-        b.on_transport_event(TransportEvent::LinkUp { link: 1, mtu: 182, peer_hint: None });
+        a.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+        b.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
 
         // Mutual discovery: each learns the other's signed announce.
         for f in drain(&b) {
@@ -1292,7 +1300,11 @@ mod tests {
         // --- B restarts: a fresh in-memory node with the SAME identity seed. Its Noise session is
         //     gone; A still holds its (now-stale) half.
         let mut b = node(2);
-        b.on_transport_event(TransportEvent::LinkUp { link: 1, mtu: 182, peer_hint: None });
+        b.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
         a.announce(); // A re-announces (as it does periodically) so the fresh B relearns it.
         for f in drain(&b) {
             a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
