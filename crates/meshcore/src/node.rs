@@ -1385,6 +1385,102 @@ mod tests {
         );
     }
 
+    /// A DM ciphertext lost in transit must not permanently kill that direction. Noise transport
+    /// nonces are implicit: if one A->B ciphertext is dropped by the mesh (radio loss, relay TTL,
+    /// congestion), A's send counter is ahead of B's receive counter and every later A->B DM fails
+    /// decryption — silently, forever — while B->A stays healthy, because the counters are
+    /// per-direction. This is the field bug: after a lossy multi-hop exchange, one phone can
+    /// receive DMs but its own DMs never arrive, and moving the phones closer doesn't heal it.
+    #[test]
+    fn dm_survives_a_lost_ciphertext_without_killing_the_direction() {
+        let mut a = node(1);
+        let mut b = node(2);
+        a.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+        b.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+
+        // Mutual discovery.
+        for f in drain(&b) {
+            a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        for f in drain(&a) {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        let b_fp = a
+            .take_events()
+            .iter()
+            .find_map(|e| match e {
+                MeshEvent::PeerAppeared { fingerprint, .. } => Some(*fingerprint),
+                _ => None,
+            })
+            .expect("A should learn B");
+        let _ = b.take_events();
+
+        // Baseline: session establishes and a DM flows A -> B.
+        a.send_dm(b_fp, "first: arrives");
+        for _ in 0..8 {
+            for f in drain(&a) {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in drain(&b) {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+        }
+        assert!(
+            b.take_events().iter().any(
+                |e| matches!(e, MeshEvent::DmReceived { text, .. } if text == "first: arrives")
+            ),
+            "baseline: the first DM should deliver"
+        );
+
+        // A sends a DM that the mesh loses: A has encrypted it (its send counter advanced) but
+        // B never sees the frames.
+        a.send_dm(b_fp, "second: lost by the mesh");
+        let _ = drain(&a);
+
+        // The next DM must still deliver despite the gap in the counter sequence.
+        a.send_dm(b_fp, "third: after the gap");
+        for _ in 0..8 {
+            for f in drain(&a) {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in drain(&b) {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+        }
+        assert!(
+            b.take_events().iter().any(
+                |e| matches!(e, MeshEvent::DmReceived { text, .. } if text == "third: after the gap")
+            ),
+            "a single lost ciphertext must not break every later DM in that direction"
+        );
+
+        // And the reverse direction was never affected.
+        let a_fp = a.fingerprint();
+        b.send_dm(a_fp, "reply still works");
+        for _ in 0..8 {
+            for f in drain(&b) {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in drain(&a) {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+        }
+        assert!(
+            a.take_events().iter().any(
+                |e| matches!(e, MeshEvent::DmReceived { text, .. } if text == "reply still works")
+            ),
+            "the healthy direction should keep working"
+        );
+    }
+
     /// DMs (unlike the ephemeral Noise session) must be persisted so a thread survives a restart.
     #[test]
     fn sent_dm_is_persisted() {
