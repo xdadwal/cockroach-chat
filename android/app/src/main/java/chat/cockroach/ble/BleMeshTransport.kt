@@ -3,6 +3,7 @@
 package chat.cockroach.ble
 
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
@@ -84,10 +85,13 @@ class BleMeshTransport(
         val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         lowPower = !pm.isInteractive
         context.registerReceiver(
-            screenReceiver,
+            systemReceiver,
             IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_SCREEN_OFF)
+                // So we can rejoin the mesh when Bluetooth is toggled back on, instead of staying
+                // dead until the app is restarted.
+                addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
             },
         )
         status("Bluetooth ready; starting mesh (service ${BleConstants.SERVICE_UUID})")
@@ -97,7 +101,7 @@ class BleMeshTransport(
     }
 
     fun stop() {
-        runCatching { context.unregisterReceiver(screenReceiver) }
+        runCatching { context.unregisterReceiver(systemReceiver) }
         adapter?.bluetoothLeScanner?.stopScan(scanCallback)
         adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback)
         links.values.forEach { if (it is Endpoint.Central) it.gatt.close() }
@@ -113,12 +117,47 @@ class BleMeshTransport(
     @Volatile
     private var lowPower = false
 
-    private val screenReceiver = object : BroadcastReceiver() {
+    private val systemReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, intent: Intent?) {
             when (intent?.action) {
                 Intent.ACTION_SCREEN_ON -> setLowPower(false)
                 Intent.ACTION_SCREEN_OFF -> setLowPower(true)
+                BluetoothAdapter.ACTION_STATE_CHANGED ->
+                    when (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)) {
+                        BluetoothAdapter.STATE_ON -> onBluetoothOn()
+                        BluetoothAdapter.STATE_OFF -> onBluetoothOff()
+                    }
             }
+        }
+    }
+
+    /** Turning Bluetooth off silently tore down our advertiser, scanner, and GATT server and killed
+     *  every connection. Re-establish them so the mesh rejoins on its own — no app restart. */
+    private fun onBluetoothOn() {
+        status("Bluetooth back on — rejoining mesh")
+        dropAllLinks()
+        runCatching { gattServer?.close() }
+        gattServer = null
+        startGattServer()
+        startAdvertising()
+        startScanning()
+    }
+
+    /** Bluetooth was turned off: connections are dead. Clear our state (and tell the core) so we
+     *  start clean when it comes back. */
+    private fun onBluetoothOff() {
+        status("Bluetooth off — mesh paused, will rejoin when it's back")
+        dropAllLinks()
+        runCatching { gattServer?.close() }
+        gattServer = null
+    }
+
+    /** Close and forget every link, notifying the core of each drop so its per-peer state resets. */
+    private fun dropAllLinks() {
+        for (id in links.keys.toList()) {
+            val ep = links.remove(id)
+            if (ep is Endpoint.Central) runCatching { ep.gatt.close() }
+            onLinkDown(id.toULong())
         }
     }
 
