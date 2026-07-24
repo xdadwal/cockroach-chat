@@ -109,11 +109,18 @@ pub struct MeshNode<T: Transport, C: Clock, S: Store> {
     /// no way to ask again), so we re-drive stalled handshakes from `tick` until they complete.
     handshake_last_ms: HashMap<Fingerprint, Millis>,
     handshake_attempts: HashMap<Fingerprint, u32>,
+    /// Counts fresh handshakes a peer sends us *while we already hold a ready session*. A restarted
+    /// peer lost its half and keeps re-initiating; past a small threshold we treat our session as a
+    /// zombie and let the new handshake supersede it, instead of ignoring it forever.
+    resync_pending: HashMap<Fingerprint, u8>,
 }
 
 /// How long to wait before re-sending a stalled initiator handshake, and how many times to try.
 const DM_HANDSHAKE_RETRY_MS: Millis = 2000;
 const DM_HANDSHAKE_MAX_ATTEMPTS: u32 = 12;
+/// How many unexpected handshakes a peer must send us against a live session before we conclude the
+/// peer restarted and supersede it. >1 so a single stray/late retransmit never resets a good session.
+const RESYNC_HANDSHAKE_THRESHOLD: u8 = 2;
 
 impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
     pub fn new(
@@ -151,6 +158,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             pending_inbound_dms: HashMap::new(),
             handshake_last_ms: HashMap::new(),
             handshake_attempts: HashMap::new(),
+            resync_pending: HashMap::new(),
         }
     }
 
@@ -358,6 +366,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         self.pending_inbound_dms.clear();
         self.handshake_last_ms.clear();
         self.handshake_attempts.clear();
+        self.resync_pending.clear();
         self.events.clear();
     }
 
@@ -396,7 +405,17 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             .map(|s| s.is_ready())
             .unwrap_or(false)
         {
-            return; // already established; ignore a stray/late handshake
+            // We hold a live session, yet the peer is initiating a fresh handshake. A single
+            // stray/late retransmit is ignored; but a peer that *keeps* re-initiating has lost its
+            // half (it restarted) and our session is a zombie it can't use. Past the threshold,
+            // drop the zombie and respond fresh so the pair re-syncs instead of deadlocking.
+            let tries = self.resync_pending.entry(fp).or_insert(0);
+            *tries += 1;
+            if *tries < RESYNC_HANDSHAKE_THRESHOLD {
+                return;
+            }
+            self.resync_pending.remove(&fp);
+            self.noise_sessions.remove(&fp);
         }
         // Responder path: create the session on the first handshake packet.
         if !self.noise_sessions.contains_key(&fp) {
@@ -469,6 +488,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         }
         self.handshake_last_ms.remove(&fp);
         self.handshake_attempts.remove(&fp);
+        self.resync_pending.remove(&fp);
         self.events.push(MeshEvent::DmSession {
             peer_fp: fp,
             verified: true,
@@ -516,6 +536,12 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             if buf.len() < 32 {
                 buf.push(pkt.payload.clone());
             }
+            // If we hold no session at all, the peer is sending on a session we lost (we restarted).
+            // Kick a fresh handshake so we re-sync; the peer supersedes its stale one on our repeat
+            // attempts (see handle_noise_handshake). The retry loop drives it to completion.
+            if !self.noise_sessions.contains_key(&fp) {
+                self.begin_handshake(fp);
+            }
             return;
         }
         self.decrypt_and_emit(fp, &pkt.payload);
@@ -531,6 +557,8 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
                 Err(_) => return,
             }
         };
+        // A successful decrypt proves this session is live, not a zombie — forget any resync tally.
+        self.resync_pending.remove(&fp);
         let from_eph = self.fp_to_eph.get(&fp).copied().unwrap_or([0u8; 8]);
         let text = String::from_utf8_lossy(&plaintext).to_string();
         self.events.push(MeshEvent::DmReceived {
@@ -1212,6 +1240,125 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, MeshEvent::DmReceived { .. })),
             "no chat message should be delivered by starting a session"
+        );
+    }
+
+    /// A one-sided restart must self-heal. If B's process restarts mid-session, its in-memory Noise
+    /// session is gone while A still holds its now-useless half. Without recovery, A's DMs are
+    /// buffered forever by B, and B's re-handshake is ignored by A's "ready" zombie — a permanent
+    /// deadlock until A *also* restarts (the field bug: DMs work one way, or not at all, until a
+    /// reboot). After recovery, DMs must flow again.
+    #[test]
+    fn dm_recovers_after_one_side_restarts_midsession() {
+        let mut a = node(1);
+        let mut b = node(2);
+        a.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+        b.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+
+        // Mutual discovery: each learns the other's signed announce.
+        for f in drain(&b) {
+            a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        for f in drain(&a) {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        let b_fp = a
+            .take_events()
+            .iter()
+            .find_map(|e| match e {
+                MeshEvent::PeerAppeared { fingerprint, .. } => Some(*fingerprint),
+                _ => None,
+            })
+            .expect("A should learn B");
+        let _ = b.take_events();
+
+        // Baseline: establish a session and confirm a DM flows A -> B.
+        a.send_dm(b_fp, "before restart");
+        for _ in 0..8 {
+            for f in drain(&a) {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in drain(&b) {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+        }
+        assert!(
+            b.take_events().iter().any(
+                |e| matches!(e, MeshEvent::DmReceived { text, .. } if text == "before restart")
+            ),
+            "baseline: the DM should deliver while both sessions are live"
+        );
+
+        // --- B restarts: a fresh in-memory node with the SAME identity seed. Its Noise session is
+        //     gone; A still holds its (now-stale) half.
+        let mut b = node(2);
+        b.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+        a.announce(); // A re-announces (as it does periodically) so the fresh B relearns it.
+        for f in drain(&b) {
+            a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        for f in drain(&a) {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        let _ = a.take_events();
+        let _ = b.take_events();
+
+        // A (unaware B restarted) sends a DM with its stale session — B can't decrypt it. This must
+        // trigger recovery rather than deadlock. Model real timing: frames propagate in ms, but a
+        // stalled handshake only retries every DM_HANDSHAKE_RETRY_MS — so advance the clock once per
+        // retry cycle, then let frames fully settle before the next retry.
+        a.send_dm(b_fp, "triggers recovery");
+        for _ in 0..4 {
+            for f in drain(&a) {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in drain(&b) {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+        }
+        for _ in 0..6 {
+            a.clock.advance(DM_HANDSHAKE_RETRY_MS + 1);
+            b.clock.advance(DM_HANDSHAKE_RETRY_MS + 1);
+            a.tick();
+            b.tick();
+            for _ in 0..6 {
+                for f in drain(&a) {
+                    b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+                }
+                for f in drain(&b) {
+                    a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+                }
+            }
+        }
+        let _ = b.take_events();
+
+        // The session is re-synced: a fresh DM from A must now reach the restarted B.
+        a.send_dm(b_fp, "after recovery");
+        for _ in 0..8 {
+            for f in drain(&a) {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in drain(&b) {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+        }
+        assert!(
+            b.take_events().iter().any(
+                |e| matches!(e, MeshEvent::DmReceived { text, .. } if text == "after recovery")
+            ),
+            "after a one-sided restart, the pair must re-sync and DMs must flow again"
         );
     }
 
