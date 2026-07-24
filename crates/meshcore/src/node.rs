@@ -427,12 +427,39 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             self.resync_pending.remove(&fp);
             self.noise_sessions.remove(&fp);
         }
-        // Responder path: create the session on the first handshake packet.
+        // Glare tie-breaker: both sides initiated simultaneously and both hold in-flight
+        // *initiator* sessions, so each is about to feed the other's msg1 into a state machine
+        // expecting msg2 — mutual destruction, retried in lockstep every 2 s. Deterministic rule:
+        // the lower fingerprint stays initiator (ignores the intruding msg1); the higher one
+        // yields, drops its attempt, and answers as responder. msg1 is recognized by size — in
+        // XX with empty handshake payloads, msg1 (e) is exactly 32 bytes, msg2 (e, ee, s, es) is
+        // 96 and msg3 (s, se) is 64 — so a legitimate msg2 never enters this branch. Feeding
+        // first and using the read error as the glare signal would not work: a failed read
+        // poisons the snow handshake state, destroying the very session the winner must keep.
+        // Attempts/last_ms are kept so the retry budget still bounds the exchange.
+        const XX_MSG1_LEN: usize = 32;
+        if pkt.payload.len() == XX_MSG1_LEN {
+            if let Some(session) = self.noise_sessions.get(&fp) {
+                if session.is_handshaking() && session.initiator {
+                    if self.fingerprint() < fp {
+                        return; // we win: keep initiating, peer will yield to our msg1
+                    }
+                    self.noise_sessions.remove(&fp); // we yield: respond to theirs instead
+                }
+            }
+        }
+        // Responder path: create the session on the first handshake packet. Responders enter the
+        // same retry bookkeeping as initiators (attempts + last-progress timestamp) so a stalled
+        // half-open session — e.g. the final msg3 lost in the mesh — is eventually dropped and
+        // re-driven by `retry_stalled_handshakes` instead of wedging forever while the initiator
+        // believes the session is ready.
         if !self.noise_sessions.contains_key(&fp) {
             let priv_bytes = self.identity.dh_private_bytes();
             match NoiseSession::new_responder(&priv_bytes) {
                 Ok(s) => {
                     self.noise_sessions.insert(fp, s);
+                    self.handshake_last_ms.insert(fp, self.clock.now_ms());
+                    self.handshake_attempts.entry(fp).or_insert(0);
                 }
                 Err(_) => return,
             }
@@ -444,6 +471,8 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
                 return;
             }
         }
+        // Any successful read is progress — push the stall deadline out.
+        self.handshake_last_ms.insert(fp, self.clock.now_ms());
         self.advance_handshake(fp);
     }
 
@@ -1624,6 +1653,139 @@ mod tests {
                 .iter()
                 .map(|p| (p.msg_type, p.ttl))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    /// Set up two nodes with an established link and mutual announces; returns (a, b, b_fp, a_fp).
+    fn linked_pair() -> (
+        MeshNode<RecordingTransport, ManualClock, MemoryStore>,
+        MeshNode<RecordingTransport, ManualClock, MemoryStore>,
+        Fingerprint,
+        Fingerprint,
+    ) {
+        let mut a = node(1);
+        let mut b = node(2);
+        a.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+        b.on_transport_event(TransportEvent::LinkUp {
+            link: 1,
+            mtu: 182,
+            peer_hint: None,
+        });
+        for f in drain(&b) {
+            a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        for f in drain(&a) {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        let b_fp = a
+            .take_events()
+            .iter()
+            .find_map(|e| match e {
+                MeshEvent::PeerAppeared { fingerprint, .. } => Some(*fingerprint),
+                _ => None,
+            })
+            .expect("A should learn B");
+        let a_fp = a.fingerprint();
+        let _ = b.take_events();
+        (a, b, b_fp, a_fp)
+    }
+
+    /// REPRO 1: a scan-initiated (message-less) session must recover when the final handshake
+    /// message (msg3) is lost. The initiator believes the session is ready; the responder is
+    /// stuck half-open awaiting msg3 — and responders have no handshake_attempts entry, so the
+    /// retry loop never drives them.
+    #[test]
+    fn scan_session_recovers_when_final_handshake_message_is_lost() {
+        let (mut a, mut b, b_fp, _a_fp) = linked_pair();
+
+        a.start_dm_session(b_fp);
+        // msg1 a -> b, msg2 b -> a delivered normally.
+        for f in drain(&a) {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        for f in drain(&b) {
+            a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        // msg3 a -> b: LOST in the mesh.
+        let _ = drain(&a);
+        assert!(
+            a.take_events()
+                .iter()
+                .any(|e| matches!(e, MeshEvent::DmSession { verified: true, .. })),
+            "initiator believes the session completed"
+        );
+
+        // Drive both nodes well past every retry budget (~50 s simulated).
+        let mut b_verified = false;
+        for _ in 0..200 {
+            a.clock.advance(250);
+            b.clock.advance(250);
+            a.tick();
+            b.tick();
+            for f in drain(&a) {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in drain(&b) {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            if b.take_events()
+                .iter()
+                .any(|e| matches!(e, MeshEvent::DmSession { verified: true, .. }))
+            {
+                b_verified = true;
+                break;
+            }
+        }
+        assert!(
+            b_verified,
+            "responder must eventually complete or re-sync after losing msg3"
+        );
+    }
+
+    /// REPRO 2: both sides initiating at the same instant (mutual QR scan within the mesh
+    /// latency window) — the crossed msg1s must not permanently wedge the pair. There is no
+    /// initiator tie-breaker, and both sides retry on the same fixed 2 s cadence.
+    #[test]
+    fn simultaneous_mutual_scan_eventually_converges() {
+        let (mut a, mut b, b_fp, a_fp) = linked_pair();
+
+        a.start_dm_session(b_fp);
+        b.start_dm_session(a_fp);
+
+        let (mut a_verified, mut b_verified) = (false, false);
+        for _ in 0..200 {
+            // Simultaneous exchange: collect both sides' frames BEFORE delivering either.
+            let af = drain(&a);
+            let bf = drain(&b);
+            for f in af {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in bf {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            a_verified |= a
+                .take_events()
+                .iter()
+                .any(|e| matches!(e, MeshEvent::DmSession { verified: true, .. }));
+            b_verified |= b
+                .take_events()
+                .iter()
+                .any(|e| matches!(e, MeshEvent::DmSession { verified: true, .. }));
+            if a_verified && b_verified {
+                break;
+            }
+            a.clock.advance(250);
+            b.clock.advance(250);
+            a.tick();
+            b.tick();
+        }
+        assert!(
+            a_verified && b_verified,
+            "mutual simultaneous scan must converge (a: {a_verified}, b: {b_verified})"
         );
     }
 
