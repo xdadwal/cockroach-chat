@@ -25,7 +25,11 @@ pub struct StoredMessage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeerRecord {
     pub fingerprint: Fingerprint,
+    /// User-assigned private name (set after in-person verification).
     pub petname: Option<String>,
+    /// The peer's last announced display name (their own nick), persisted so restored channel/DM
+    /// history shows a name — not a raw id — before the peer re-announces after a restart.
+    pub nick: Option<String>,
     pub verified: bool,
     pub last_eph: EphId,
     pub last_seen_ms: Millis,
@@ -314,6 +318,7 @@ mod tests {
         s.upsert_peer(PeerRecord {
             fingerprint: [1; 32],
             petname: Some("ava".into()),
+            nick: Some("Ava".into()),
             verified: true,
             last_eph: [0; 8],
             last_seen_ms: 5,
@@ -321,6 +326,7 @@ mod tests {
         s.upsert_peer(PeerRecord {
             fingerprint: [2; 32],
             petname: None,
+            nick: None,
             verified: false,
             last_eph: [0; 8],
             last_seen_ms: 6,

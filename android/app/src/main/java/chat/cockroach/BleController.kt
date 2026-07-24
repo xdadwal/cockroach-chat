@@ -113,13 +113,13 @@ class BleController private constructor(context: Context) {
         ephId.value = n.ephId()
         running.value = true
 
+        // Reload persisted contacts + their DM threads FIRST — this also seeds the eph->name map, so
+        // restored channel history resolves senders to names instead of raw ids.
+        restoreContacts(n)
         // Subscribe to the broadcast feed + the static public channels, and restore their history.
         joinChannel(ANNOUNCE, silent = true)
         for (name in PUBLIC_CHANNELS) joinChannel(name, silent = true)
         for (ch in listOf(ANNOUNCE) + PUBLIC_CHANNELS.map { normalizeChannel(it) }) restoreHistory(ch, n)
-        // Reload verified contacts + their DM threads from the encrypted store, so they survive a
-        // stop/restart (or process death) instead of vanishing until each peer re-announces.
-        restoreContacts(n)
 
         log.add("node up — eph ${n.ephId().take(8)}")
         t.start()
@@ -152,8 +152,11 @@ class BleController private constructor(context: Context) {
     private fun restoreContacts(n: FfiMeshNode) {
         peers.clear()
         for (p in n.listPeers()) {
-            val name = n.peerPetname(p.fingerprint) ?: p.petname ?: p.fingerprint.take(8)
+            val name = n.peerPetname(p.fingerprint) ?: p.petname ?: p.nick ?: p.fingerprint.take(8)
             upsertPeer(p.fingerprint, name, verified = p.verified)
+            // Seed eph->fp so restored channel messages (stored by the sender's eph) resolve to a
+            // name before the peer re-announces.
+            if (p.lastEph.isNotBlank()) ephToFp[p.lastEph] = p.fingerprint
             val t = thread(p.fingerprint)
             t.clear()
             for (dm in n.dmHistory(p.fingerprint, 200u)) {

@@ -358,6 +358,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         self.store.get_peer(&fp).unwrap_or(PeerRecord {
             fingerprint: fp,
             petname: None,
+            nick: None,
             verified: false,
             last_eph: [0u8; 8],
             last_seen_ms: self.clock.now_ms(),
@@ -816,6 +817,13 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         self.store.upsert_peer(PeerRecord {
             fingerprint,
             petname: existing.as_ref().and_then(|p| p.petname.clone()),
+            // Persist the announced display name so restored history resolves to a name; keep the
+            // last known one if this announce carries an empty nick.
+            nick: if nick.is_empty() {
+                existing.as_ref().and_then(|p| p.nick.clone())
+            } else {
+                Some(nick.clone())
+            },
             verified: existing.as_ref().map(|p| p.verified).unwrap_or(false),
             last_eph: pkt.sender,
             last_seen_ms: pkt.timestamp_ms,
@@ -1118,6 +1126,12 @@ mod tests {
                 .any(|e| matches!(e, MeshEvent::PeerAppeared { .. })),
             "b should have learned a's identity, got {evs:?}"
         );
+        // The announced display name is persisted, so restored history can show a name (not an id).
+        let stored = b
+            .store()
+            .get_peer(&a.fingerprint())
+            .expect("peer persisted");
+        assert_eq!(stored.nick.as_deref(), Some("tester"));
     }
 
     /// Drain (and clear) a node's captured outbound frames.
@@ -1449,6 +1463,7 @@ mod tests {
         a.store.upsert_peer(PeerRecord {
             fingerprint: fp,
             petname: existing.petname.clone(),
+            nick: existing.nick.clone(),
             verified: existing.verified,
             last_eph: [9; 8],
             last_seen_ms: 1,

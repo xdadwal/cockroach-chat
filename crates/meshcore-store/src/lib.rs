@@ -53,6 +53,7 @@ impl SqliteStore {
              CREATE TABLE IF NOT EXISTS peers (
                  fingerprint BLOB PRIMARY KEY,
                  petname TEXT,
+                 nick TEXT,
                  verified INTEGER NOT NULL,
                  last_eph BLOB NOT NULL,
                  last_seen_ms INTEGER NOT NULL
@@ -73,6 +74,9 @@ impl SqliteStore {
              );
              CREATE INDEX IF NOT EXISTS idx_dms_peer ON dms(peer, timestamp_ms);",
         )?;
+        // Migration for databases created before the peers table had a `nick` column. Errors with
+        // "duplicate column name" on newer databases, which is why the result is discarded.
+        let _ = conn.execute_batch("ALTER TABLE peers ADD COLUMN nick TEXT;");
         Ok(Self {
             conn,
             path,
@@ -195,11 +199,12 @@ impl Store for SqliteStore {
 
     fn upsert_peer(&mut self, peer: PeerRecord) {
         let _ = self.conn.execute(
-            "INSERT OR REPLACE INTO peers (fingerprint, petname, verified, last_eph, last_seen_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT OR REPLACE INTO peers (fingerprint, petname, nick, verified, last_eph, last_seen_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 &peer.fingerprint[..],
                 peer.petname,
+                peer.nick,
                 peer.verified as i64,
                 &peer.last_eph[..],
                 peer.last_seen_ms as i64
@@ -210,7 +215,7 @@ impl Store for SqliteStore {
     fn get_peer(&self, fp: &Fingerprint) -> Option<PeerRecord> {
         self.conn
             .query_row(
-                "SELECT fingerprint, petname, verified, last_eph, last_seen_ms
+                "SELECT fingerprint, petname, verified, last_eph, last_seen_ms, nick
                  FROM peers WHERE fingerprint = ?1",
                 params![&fp[..]],
                 |row| {
@@ -220,6 +225,7 @@ impl Store for SqliteStore {
                         verified: row.get::<_, i64>(2)? != 0,
                         last_eph: to_arr8(row.get::<_, Vec<u8>>(3)?),
                         last_seen_ms: row.get::<_, i64>(4)? as u64,
+                        nick: row.get(5)?,
                     })
                 },
             )
@@ -228,10 +234,9 @@ impl Store for SqliteStore {
     }
 
     fn list_peers(&self) -> Vec<PeerRecord> {
-        let mut stmt = match self
-            .conn
-            .prepare("SELECT fingerprint, petname, verified, last_eph, last_seen_ms FROM peers")
-        {
+        let mut stmt = match self.conn.prepare(
+            "SELECT fingerprint, petname, verified, last_eph, last_seen_ms, nick FROM peers",
+        ) {
             Ok(s) => s,
             Err(_) => return Vec::new(),
         };
@@ -242,6 +247,7 @@ impl Store for SqliteStore {
                 verified: row.get::<_, i64>(2)? != 0,
                 last_eph: to_arr8(row.get::<_, Vec<u8>>(3)?),
                 last_seen_ms: row.get::<_, i64>(4)? as u64,
+                nick: row.get(5)?,
             })
         }) {
             Ok(iter) => iter.filter_map(Result::ok).collect(),
@@ -405,6 +411,7 @@ mod tests {
             s.upsert_peer(PeerRecord {
                 fingerprint: [9; 32],
                 petname: Some("ava".into()),
+                nick: Some("Ava".into()),
                 verified: true,
                 last_eph: [2; 8],
                 last_seen_ms: 100,
@@ -441,6 +448,7 @@ mod tests {
             s.upsert_peer(PeerRecord {
                 fingerprint: [3; 32],
                 petname: Some("ben".into()),
+                nick: Some("Ben".into()),
                 verified: true,
                 last_eph: [1; 8],
                 last_seen_ms: 9,
@@ -448,9 +456,10 @@ mod tests {
         } // close — force a real round-trip through the encrypted file
 
         let s = open(dir.path(), &key);
-        // Verified contacts reload without a live announce.
+        // Verified contacts reload without a live announce, with their name intact.
         assert_eq!(s.list_peers().len(), 1);
         assert!(s.list_peers()[0].verified);
+        assert_eq!(s.list_peers()[0].nick.as_deref(), Some("Ben"));
         // DM thread survives the restart, oldest-first.
         let dms = s.dm_history(&[3; 32], 10);
         assert_eq!(dms.len(), 2);

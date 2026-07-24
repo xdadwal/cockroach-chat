@@ -157,7 +157,12 @@ pub struct FfiMessage {
 pub struct FfiPeer {
     pub fingerprint: String,
     pub petname: Option<String>,
+    /// The peer's last announced display name (their own nick), so restored history shows a name.
+    pub nick: Option<String>,
     pub verified: bool,
+    /// The peer's last-known ephemeral wire id (hex). Lets the UI resolve the sender of restored
+    /// channel history (stored by eph) to a name before the peer re-announces.
+    pub last_eph: String,
 }
 
 /// A persisted DM, for reloading a thread on restart.
@@ -269,7 +274,9 @@ impl FfiMeshNode {
             .map(|p| FfiPeer {
                 fingerprint: hex(&p.fingerprint),
                 petname: p.petname,
+                nick: p.nick,
                 verified: p.verified,
+                last_eph: hex(&p.last_eph),
             })
             .collect()
     }
