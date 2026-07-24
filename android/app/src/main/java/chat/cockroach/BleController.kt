@@ -363,7 +363,7 @@ class BleController private constructor(context: Context) {
 
         /** Static public channels for V1 (in-app channel creation is deferred). Scenario-tuned. */
         val PUBLIC_CHANNELS = listOf(
-            "general", "alerts", "medics", "supplies", "lost+found", "exits",
+            "general", "alerts", "medics", "supplies", "lost+found", "exits", "meme",
         )
 
         // Compact, evocative wordlist for safety numbers (visual in-person key comparison).

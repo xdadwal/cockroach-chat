@@ -114,7 +114,10 @@ jobs:
     name: android (build + lint)
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 gives Gradle the tags/history it needs to derive the app version.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-java@v5
         with:

@@ -262,6 +262,7 @@ val EnStrings = Strings(
     channelNames = mapOf(
         "general" to "general", "alerts" to "alerts", "medics" to "medics",
         "supplies" to "supplies", "lost+found" to "lost+found", "exits" to "exits",
+        "meme" to "meme",
     ),
 )
 
@@ -380,6 +381,7 @@ val HiStrings = Strings(
     channelNames = mapOf(
         "general" to "सामान्य", "alerts" to "चेतावनी", "medics" to "चिकित्सा",
         "supplies" to "आपूर्ति", "lost+found" to "खोया-पाया", "exits" to "निकास",
+        "meme" to "मीम",
     ),
 )
 

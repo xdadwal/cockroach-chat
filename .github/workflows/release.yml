@@ -15,7 +15,11 @@ jobs:
     name: build + sign APK
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 pulls full history + tags so Gradle can derive the version from the git
+      # tag (see docs/RELEASING.md and android/app/build.gradle.kts).
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-java@v5
         with:
