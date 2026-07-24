@@ -687,6 +687,17 @@ private fun IdentityScreen(ble: BleController, onShowQr: () -> Unit, onScanQr: (
                     Spacer(Modifier.height(2.dp))
                     CcText(s.creditsFooterSub, 11, FontWeight.Medium, CcInkMute(0.4f))
                 }
+                // Build version — derived from the release git tag (see docs/RELEASING.md). Not
+                // translated; a version string is the same in every language.
+                val context = LocalContext.current
+                val version = remember {
+                    runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
+                        .getOrNull().orEmpty()
+                }
+                if (version.isNotBlank()) {
+                    Spacer(Modifier.height(10.dp))
+                    CcText("v$version", 10, FontWeight.Medium, CcInkMute(0.35f), mono = true, align = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                }
                 Spacer(Modifier.height(6.dp))
             }
         }

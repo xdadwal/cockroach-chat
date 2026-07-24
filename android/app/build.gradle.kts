@@ -2,6 +2,44 @@
 // extension and shadows the java.util package.
 import java.util.Properties
 
+// --- Release-driven versioning -----------------------------------------------------------------
+// The git tag is the single source of truth (see docs/RELEASING.md). A signed release is cut by
+// pushing a `vX.Y.Z` tag; this derives the build's versionName/versionCode from it so the artifact
+// always self-reports the release it came from. Dev builds get a `git describe` string. Graceful
+// fallback keeps a `.git`-less source tarball building.
+fun git(vararg args: String): String? = runCatching {
+    // Discard stderr (not merge it): git prints "fatal: No names found" when a repo has no tags,
+    // and a merged stream would return that text as a bogus value. Only exit 0 counts.
+    val proc = ProcessBuilder(listOf("git") + args)
+        .directory(rootProject.projectDir)
+        .redirectError(ProcessBuilder.Redirect.DISCARD)
+        .start()
+    val out = proc.inputStream.bufferedReader().readText().trim()
+    if (proc.waitFor() == 0) out.takeIf { it.isNotEmpty() } else null
+}.getOrNull()
+
+// On an exact release tag: "0.2.0". Between tags: "0.2.0-4-g1a2b3c". No tag: "0.0.0-dev+1a2b3c".
+val derivedVersionName: String = run {
+    val exact = git("describe", "--tags", "--exact-match")?.removePrefix("v")
+    val described = git("describe", "--tags", "--always", "--dirty")?.removePrefix("v")
+    val hasTag = git("describe", "--tags", "--abbrev=0") != null
+    when {
+        exact != null -> exact
+        described != null && hasTag -> described
+        described != null -> "0.0.0-dev+$described"
+        else -> "0.0.0-dev"
+    }
+}
+
+// Monotonic per release: MAJOR*10000 + MINOR*100 + PATCH from the nearest tag (v0.2.0 -> 200).
+// Missing/malformed components read as 0; defaults to 1 when untagged (Android requires >= 1).
+val derivedVersionCode: Int = run {
+    val tag = git("describe", "--tags", "--abbrev=0")?.removePrefix("v")
+    val (major, minor, patch) = (tag?.substringBefore("-")?.split(".").orEmpty() + listOf("0", "0", "0"))
+        .take(3).map { it.toIntOrNull() ?: 0 }
+    (major * 10000 + minor * 100 + patch).coerceAtLeast(1)
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -16,8 +54,8 @@ android {
         applicationId = "chat.cockroach"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = derivedVersionCode
+        versionName = derivedVersionName
         ndk {
             // Rust .so libs are prebuilt into jniLibs by scripts/build-android-lib.sh.
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
