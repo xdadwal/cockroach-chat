@@ -8,10 +8,10 @@ use meshcore::{MeshEvent, Tunables};
 const MTU: usize = 182;
 const LINK_LATENCY_MS: u64 = 15;
 
-/// A crowd dense enough that the whole cluster is within a handful of hops. We lift the TTL so a
-/// single broadcast can traverse the entire connected graph — the default TTL (7, clamped 5)
-/// models a physically tiny knot of people, whereas the simulator stretches a synthetic graph
-/// across a unit square with a larger diameter.
+/// A crowd dense enough that the whole cluster is within a handful of hops. We lift every TTL so a
+/// single broadcast can traverse the entire connected graph — the default per-type TTLs model a
+/// physically small crowd, whereas the simulator stretches a synthetic graph across a unit square
+/// with a larger diameter.
 fn crowd_cfg() -> Tunables {
     // Counter-based suppression already thins redundant rebroadcasts; combining it with aggressive
     // probabilistic thinning (0.45) under-covers at the ~8-link connection cap, because a
@@ -20,8 +20,12 @@ fn crowd_cfg() -> Tunables {
     // single broadcast can cross the synthetic graph's larger diameter. (Simulator finding; see
     // docs/PROGRESS.md.)
     Tunables {
-        ttl_default: 24,
-        ttl_dense_clamp: 24,
+        ttl_announce: 24,
+        ttl_announce_dense: 24,
+        ttl_channel: 24,
+        ttl_channel_dense: 24,
+        ttl_dm: 24,
+        ttl_dm_dense: 24,
         relay_prob_sparse: 1.0,
         relay_prob_mid: 1.0,
         relay_prob_dense: 0.85,
