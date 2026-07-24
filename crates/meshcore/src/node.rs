@@ -207,7 +207,9 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         let channel = channels::normalize(channel);
         self.subscribed.insert(channel.clone());
         let now = self.clock.now_ms();
-        let ttl = self.cfg.origin_ttl(self.links.len());
+        let ttl = self
+            .cfg
+            .origin_ttl(MsgType::ChannelMessage, self.links.len());
 
         let payload = encode_channel(&channel, text, &self.cfg);
         let mut pkt = Packet::new(
@@ -246,7 +248,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         );
         let mut pkt = Packet::new(
             MsgType::Announce,
-            self.cfg.origin_ttl(self.links.len()),
+            self.cfg.origin_ttl(MsgType::Announce, self.links.len()),
             now,
             self.identity.eph_id(),
             None,
@@ -589,7 +591,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             return; // we don't know where this peer is right now
         };
         let now = self.clock.now_ms();
-        let ttl = self.cfg.origin_ttl(self.links.len());
+        let ttl = self.cfg.origin_ttl(msg_type, self.links.len());
         let mut pkt = Packet::new(
             msg_type,
             ttl,
