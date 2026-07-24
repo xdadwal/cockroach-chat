@@ -356,24 +356,28 @@ fun E2EBanner() {
 // --- message bubble ---------------------------------------------------------------------------
 
 @Composable
-fun MessageBubble(msg: chat.cockroach.ChatMessage, modifier: Modifier = Modifier) {
+fun MessageBubble(msg: chat.cockroach.ChatMessage, modifier: Modifier = Modifier, inDm: Boolean = false) {
     val s = LocalStrings.current
-    // Verification control messages render as centered system lines, not chat bubbles.
+    // Trust control messages render as centered system lines, not chat bubbles.
     // For these, `sender` always carries the PEER's display name (even on `mine` rows).
     if (msg.kind != 0) {
+        val warning = msg.kind == 3
         val text = when {
             msg.kind == 1 && msg.mine -> s.sysVerifyNoticeMine.format(msg.sender)
             msg.kind == 1 -> s.sysVerifyNoticeTheirs.format(msg.sender)
             msg.kind == 2 && msg.mine -> s.sysVerifyAckMine.format(msg.sender)
-            else -> s.sysVerifyAckTheirs.format(msg.sender)
+            msg.kind == 2 -> s.sysVerifyAckTheirs.format(msg.sender)
+            else -> s.sysKeyChanged.format(msg.sender)
         }
+        val tint = if (warning) CcUnverified else CcVerified
+        val textColor = if (warning) CcUnverifiedText else CcVerifiedText
         Box(modifier.fillMaxWidth().padding(vertical = 2.dp), contentAlignment = Alignment.Center) {
             Box(
-                Modifier.clip(RoundedCornerShape(9.dp)).background(CcVerified.copy(alpha = 0.10f))
-                    .border(1.dp, CcVerified.copy(alpha = 0.25f), RoundedCornerShape(9.dp))
+                Modifier.clip(RoundedCornerShape(9.dp)).background(tint.copy(alpha = 0.10f))
+                    .border(1.dp, tint.copy(alpha = 0.25f), RoundedCornerShape(9.dp))
                     .padding(horizontal = 12.dp, vertical = 7.dp),
             ) {
-                CcText(text, 11, FontWeight.SemiBold, CcVerifiedText, align = androidx.compose.ui.text.style.TextAlign.Center, lineHeightMul = 1.35)
+                CcText(text, 11, FontWeight.SemiBold, textColor, align = androidx.compose.ui.text.style.TextAlign.Center, lineHeightMul = 1.35)
             }
         }
         return
@@ -391,19 +395,24 @@ fun MessageBubble(msg: chat.cockroach.ChatMessage, modifier: Modifier = Modifier
             ) {
                 CcText(msg.body, 14, FontWeight.Medium, CcInk, lineHeightMul = 1.45, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(6.dp))
-                CcText("${clock(msg.timestampMs)} · ${s.msgYouSigned}", 9, FontWeight.Medium, CcInkMute(0.45f), mono = true)
+                // Every outgoing message is signed by definition — the timestamp is enough.
+                CcText(clock(msg.timestampMs), 9, FontWeight.Medium, CcInkMute(0.45f), mono = true)
             }
         } else {
-            val verified = msg.verified
-            val bar = if (verified) CcVerified else CcUnverified
+            // `verified` here means cryptographically ATTRIBUTED (announce heard, signature
+            // valid — forged messages never reach the UI). It is a neutral distinction carried
+            // by quiet texture (solid vs dashed bar, plain vs quoted name), never by badges.
+            // The one badge channels show is the trust shield for contacts YOU scanned.
+            val attributed = msg.verified
+            val bar = if (attributed) CcVerified else CcUnverified
             Column(
                 Modifier
                     .fillMaxWidth(0.86f)
                     .clip(RoundedCornerShape(4.dp, 14.dp, 14.dp, 14.dp))
-                    .background(if (verified) CcElevated else CcCard)
+                    .background(if (attributed) CcElevated else CcCard)
                     .drawBehind {
                         val w = 2.dp.toPx()
-                        if (verified) {
+                        if (attributed) {
                             drawRect(SolidColor(bar), size = Size(w, size.height))
                         } else {
                             drawLine(
@@ -414,21 +423,23 @@ fun MessageBubble(msg: chat.cockroach.ChatMessage, modifier: Modifier = Modifier
                     }
                     .padding(start = 14.dp, top = 12.dp, end = 14.dp, bottom = 12.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ShieldBadge(verified, 12.dp)
-                    if (verified) {
-                        CcText(msg.sender.ifBlank { s.someone }, 13, FontWeight.ExtraBold, CcInk)
-                        CcText(s.badgeVerified, 9, FontWeight.SemiBold, CcVerifiedText, mono = true)
-                    } else {
-                        CcText("\"${msg.sender.ifBlank { s.unknown }}\"", 13, FontWeight.SemiBold, CcInkMute(0.6f), mono = true)
-                        CcText(s.badgeUnverified, 9, FontWeight.SemiBold, CcUnverifiedText, mono = true)
+                // In a 1:1 DM the peer's name and trust state live in the header — no name row,
+                // no badges on individual bubbles.
+                if (!inDm) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (attributed) {
+                            CcText(msg.sender.ifBlank { s.someone }, 13, FontWeight.ExtraBold, CcInk)
+                        } else {
+                            CcText("\"${msg.sender.ifBlank { s.unknown }}\"", 13, FontWeight.SemiBold, CcInkMute(0.6f), mono = true)
+                        }
+                        if (msg.fromContact) ShieldBadge(true, 12.dp)
                     }
+                    Spacer(Modifier.height(6.dp))
                 }
-                Spacer(Modifier.height(6.dp))
-                CcText(msg.body, 14, FontWeight.Medium, CcInk.copy(alpha = if (verified) 0.9f else 0.82f), lineHeightMul = 1.45)
+                CcText(msg.body, 14, FontWeight.Medium, CcInk.copy(alpha = if (attributed) 0.9f else 0.82f), lineHeightMul = 1.45)
                 Spacer(Modifier.height(7.dp))
                 CcText(
-                    clock(msg.timestampMs) + if (!verified) " · ${s.msgCantConfirm}" else "",
+                    clock(msg.timestampMs) + if (!attributed && !inDm) " · ${s.msgCantConfirm}" else "",
                     9, FontWeight.Medium, CcInkMute(0.4f), mono = true,
                 )
             }

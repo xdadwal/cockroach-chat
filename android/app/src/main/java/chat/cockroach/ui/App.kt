@@ -152,7 +152,7 @@ private fun MeshShell(ble: BleController) {
         Box(Modifier.weight(1f)) {
             when (val r = top) {
                 is Route.Channel -> ChannelScreen(ble, r.name, ::pop)
-                is Route.Dm -> DmScreen(ble, r.fp, ::pop)
+                is Route.Dm -> DmScreen(ble, r.fp, ::pop, onVerify = { push(Route.Verify(r.fp, scan = true)) })
                 is Route.Verify -> VerifyFlow(ble, r.peerFp, r.scan, onDone = { fp -> pop(); if (fp != null) push(Route.Dm(fp)) }, onCancel = ::pop)
                 Route.Status -> StatusScreen(ble, ::pop)
                 Route.Credits -> CreditsScreen(::pop)
@@ -515,7 +515,11 @@ private fun PeerListRow(ble: BleController, p: Peer, trailing: String, onClick: 
                     CcText("\"${p.name}\"", 13, FontWeight.SemiBold, CcInkMute(0.72f), mono = true)
                 }
             }
-            CcText(if (p.verified) s.peerYourPetname else s.peerClaims, 11, FontWeight.Medium, CcInkMute(0.45f), mono = true)
+            if (p.keyChanged) {
+                CcText(s.peerKeyChanged, 11, FontWeight.SemiBold, CcUnverifiedText, mono = true)
+            } else {
+                CcText(if (p.verified) s.peerYourPetname else s.peerClaims, 11, FontWeight.Medium, CcInkMute(0.45f), mono = true)
+            }
         }
         if (p.verified) {
             Box(Modifier.clip(RoundedCornerShape(9.dp)).background(CcAmber.copy(alpha = 0.16f)).border(1.dp, CcAmber.copy(alpha = 0.4f), RoundedCornerShape(9.dp)).padding(horizontal = 13.dp, vertical = 8.dp)) {
@@ -532,13 +536,29 @@ private fun PeerListRow(ble: BleController, p: Peer, trailing: String, onClick: 
 // --- DM -----------------------------------------------------------------------------------------
 
 @Composable
-private fun DmScreen(ble: BleController, fp: String, onBack: () -> Unit) {
+private fun DmScreen(ble: BleController, fp: String, onBack: () -> Unit, onVerify: () -> Unit = {}) {
     val s = LocalStrings.current
     val peer = ble.peers.firstOrNull { it.fp == fp }
     val name = peer?.name ?: fp.take(8)
     var draft by remember { mutableStateOf("") }
+    var showActions by remember { mutableStateOf(false) }
+    var confirmRemove by remember { mutableStateOf(false) }
+    if (showActions && peer != null) {
+        PeerActionsDialog(peer, onUnverify = { ble.unverify(fp); showActions = false }, onRemove = { showActions = false; confirmRemove = true }, onDismiss = { showActions = false })
+    }
+    if (confirmRemove && peer != null) {
+        RemoveConfirmDialog(peer, onConfirm = { confirmRemove = false; ble.forget(fp); onBack() }, onDismiss = { confirmRemove = false })
+    }
     Column(Modifier.fillMaxSize().background(CcBase)) {
-        Row(Modifier.fillMaxWidth().bottomHairline().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+        // The header is the single authoritative trust display — tap it to act on that state
+        // (contact options when verified, straight to the scan flow when not).
+        Row(
+            Modifier.fillMaxWidth()
+                .clickable { if (peer?.verified == true) showActions = true else onVerify() }
+                .bottomHairline().padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(11.dp),
+        ) {
             BackIcon(onBack)
             Box(Modifier.size(36.dp).clip(RoundedCornerShape(11.dp)).background(CcVerified.copy(alpha = 0.16f)).border(1.dp, CcVerified.copy(alpha = 0.45f), RoundedCornerShape(11.dp)), contentAlignment = Alignment.Center) {
                 CcText(name.take(1).uppercase(), 14, FontWeight.ExtraBold, CcVerifiedText)
@@ -549,6 +569,7 @@ private fun DmScreen(ble: BleController, fp: String, onBack: () -> Unit) {
                     if (peer?.verified == true) ShieldBadge(true, 13.dp, confirmed = peer.confirmed)
                 }
                 val (subtitle, subColor) = when {
+                    peer?.keyChanged == true -> s.dmKeyChanged to CcUnverifiedText
                     peer?.verified == true && peer.confirmed -> s.dmConfirmedSubtitle to CcVerifiedText
                     peer?.verified == true -> s.dmAwaitingAck to CcAmberText
                     else -> s.dmNotVerified to CcUnverifiedText
@@ -557,7 +578,7 @@ private fun DmScreen(ble: BleController, fp: String, onBack: () -> Unit) {
             }
         }
         E2EBanner()
-        MessageList(ble.thread(fp), Modifier.weight(1f), pad = 12, gap = 10)
+        MessageList(ble.thread(fp), Modifier.weight(1f), pad = 12, gap = 10, inDm = true)
         Box(Modifier.fillMaxWidth().bottomHairline().padding(horizontal = 12.dp, vertical = 10.dp)) {
             Composer(draft, { draft = it }, { if (draft.isNotBlank()) { ble.sendDm(fp, draft); draft = "" } }, s.composerDm, leading = {
                 Icon(Icons.Filled.Lock, null, tint = CcVerified, modifier = Modifier.size(15.dp))
@@ -938,7 +959,7 @@ private fun StatCard(big: String, label: String, tint: Color, modifier: Modifier
 
 /** A message list that keeps the newest message in view as the thread grows. */
 @Composable
-private fun MessageList(messages: List<ChatMessage>, modifier: Modifier = Modifier, pad: Int = 12, gap: Int = 11) {
+private fun MessageList(messages: List<ChatMessage>, modifier: Modifier = Modifier, pad: Int = 12, gap: Int = 11, inDm: Boolean = false) {
     val state = rememberLazyListState()
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) state.animateScrollToItem(messages.size - 1)
@@ -948,7 +969,7 @@ private fun MessageList(messages: List<ChatMessage>, modifier: Modifier = Modifi
         state = state,
         contentPadding = PaddingValues(pad.dp),
         verticalArrangement = Arrangement.spacedBy(gap.dp),
-    ) { items(messages) { MessageBubble(it) } }
+    ) { items(messages) { MessageBubble(it, inDm = inDm) } }
 }
 
 @Composable

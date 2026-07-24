@@ -16,9 +16,12 @@ data class ChatMessage(
     val verified: Boolean,
     val sender: String = "",
     val timestampMs: Long = 0L,
-    /** DM kind: 0 = text, 1 = verify-notice, 2 = verify-ack. Control kinds render as system lines;
-     *  `sender` then holds the PEER's display name even for `mine` rows. */
+    /** DM kind: 0 = text, 1 = verify-notice, 2 = verify-ack, 3 = key-changed marker (local).
+     *  Control kinds render as system lines; `sender` then holds the PEER's display name even
+     *  for `mine` rows. */
     val kind: Int = 0,
+    /** Channel messages only: the sender resolves to a contact you scanned in person. */
+    val fromContact: Boolean = false,
 )
 
 /**

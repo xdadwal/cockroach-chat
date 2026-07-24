@@ -24,6 +24,8 @@ data class Peer(
     /** True once an inbound verification control message (notice or ack) proves the peer's side
      *  of the encrypted channel works — the "confirmed both ends" badge state. */
     val confirmed: Boolean = false,
+    /** True while an unresolved "identity key changed" marker exists — re-verify in person. */
+    val keyChanged: Boolean = false,
 )
 
 /**
@@ -165,13 +167,15 @@ class BleController private constructor(context: Context) {
             val t = thread(p.fingerprint)
             t.clear()
             var confirmed = false
+            var keyChanged = false
             for (dm in n.dmHistory(p.fingerprint, 200u)) {
                 val kind = dm.kind.toInt()
-                if (!dm.mine && kind != KIND_TEXT) confirmed = true
+                if (!dm.mine && (kind == KIND_NOTICE || kind == KIND_ACK)) confirmed = true
+                if (kind == KIND_KEY_CHANGED) keyChanged = true
                 val sender = if (kind != KIND_TEXT) name else if (dm.mine) "you" else name
                 t.add(ChatMessage(dm.body, mine = dm.mine, verified = true, sender = sender, timestampMs = dm.timestampMs.toLong(), kind = kind))
             }
-            upsertPeer(p.fingerprint, name, verified = p.verified, confirmed = confirmed)
+            upsertPeer(p.fingerprint, name, verified = p.verified, confirmed = confirmed, keyChanged = keyChanged)
         }
     }
 
@@ -303,8 +307,19 @@ class BleController private constructor(context: Context) {
         // Establish the encrypted session now so the other device also flips to verified immediately.
         node?.startDmSession(peerFp)
         refreshPeer(peerFp)
-        // Show our own verify-notice in the thread right away (the core sends it as soon as the
-        // session is ready; the peer's ack arriving is what flips the badge to "confirmed").
+        // A fresh scan resolves any earlier trust state: the core purged stale control rows, so
+        // reset confirmed/keyChanged and rebuild the thread from the store, then show our own
+        // verify-notice right away (the peer's ack arriving flips the badge to "confirmed").
+        val idx = peers.indexOfFirst { it.fp == peerFp }
+        if (idx >= 0) peers[idx] = peers[idx].copy(confirmed = false, keyChanged = false)
+        node?.let { n ->
+            val name = peerName(peerFp)
+            val t = thread(peerFp)
+            t.clear()
+            for (dm in n.dmHistory(peerFp, 200u)) {
+                t.add(ChatMessage(dm.body, mine = dm.mine, verified = true, sender = if (dm.mine) "you" else name, timestampMs = dm.timestampMs.toLong(), kind = dm.kind.toInt()))
+            }
+        }
         thread(peerFp).add(ChatMessage("", mine = true, verified = true, sender = peerName(peerFp), timestampMs = now(), kind = KIND_NOTICE))
     }
 
@@ -360,7 +375,9 @@ class BleController private constructor(context: Context) {
                     relayedCount.value += 1
                     // ev.sender is the rotating ephemeral wire ID (hex) — resolve it to the peer's
                     // announced name / your petname (the name rides their Announce, not the message).
-                    val msg = ChatMessage(ev.body, mine = false, verified = ev.verified, sender = senderName(ev.sender), timestampMs = ev.timestampMs.toLong())
+                    // fromContact drives the ONLY badge channels show: sender is someone you scanned.
+                    val contact = ephToFp[ev.sender]?.let { fp -> peers.firstOrNull { it.fp == fp }?.verified == true } ?: false
+                    val msg = ChatMessage(ev.body, mine = false, verified = ev.verified, sender = senderName(ev.sender), timestampMs = ev.timestampMs.toLong(), fromContact = contact)
                     channel(ev.channel).add(msg)
                 }
                 is FfiEvent.PeerAppeared -> {
@@ -381,6 +398,13 @@ class BleController private constructor(context: Context) {
                     upsertPeer(ev.peer, peerName(ev.peer), verified = n.peerVerified(ev.peer))
                     log.add("DM session ${if (ev.verified) "verified" else "REJECTED"}: ${ev.peer.take(8)}")
                 }
+                is FfiEvent.PeerKeyChanged -> {
+                    val name = peerName(ev.peer)
+                    thread(ev.peer).add(ChatMessage("", mine = false, verified = true, sender = name, timestampMs = now(), kind = KIND_KEY_CHANGED))
+                    val idx = peers.indexOfFirst { it.fp == ev.peer }
+                    if (idx >= 0) peers[idx] = peers[idx].copy(keyChanged = true, confirmed = false)
+                    log.add("KEY CHANGED: ${ev.peer.take(8)} — re-verify")
+                }
                 is FfiEvent.PeerLost -> log.add("link lost")
             }
         }
@@ -396,13 +420,13 @@ class BleController private constructor(context: Context) {
     private fun senderName(eph: String): String =
         ephToFp[eph]?.let { peerName(it) } ?: eph.take(6)
 
-    private fun upsertPeer(fp: String, name: String, verified: Boolean, confirmed: Boolean = false) {
+    private fun upsertPeer(fp: String, name: String, verified: Boolean, confirmed: Boolean = false, keyChanged: Boolean = false) {
         val idx = peers.indexOfFirst { it.fp == fp }
         if (idx >= 0) {
             val existing = peers[idx]
-            peers[idx] = existing.copy(name = name, verified = existing.verified || verified, confirmed = existing.confirmed || confirmed)
+            peers[idx] = existing.copy(name = name, verified = existing.verified || verified, confirmed = existing.confirmed || confirmed, keyChanged = existing.keyChanged || keyChanged)
         } else {
-            peers.add(Peer(fp, name, verified, confirmed))
+            peers.add(Peer(fp, name, verified, confirmed, keyChanged))
         }
     }
 
@@ -422,10 +446,12 @@ class BleController private constructor(context: Context) {
         const val ANNOUNCE = "#announce"
         const val ANNOUNCE_COOLDOWN_S = 60
 
-        /** DM kinds mirrored from the core: 0 text, 1 verify-notice, 2 verify-ack. */
+        /** DM kinds mirrored from the core: 0 text, 1 verify-notice, 2 verify-ack,
+         *  3 key-changed marker (local-only). */
         const val KIND_TEXT = 0
         const val KIND_NOTICE = 1
         const val KIND_ACK = 2
+        const val KIND_KEY_CHANGED = 3
 
         // Lenient public-channel rate limit: at most CHANNEL_BURST messages per CHANNEL_WINDOW_MS.
         const val CHANNEL_BURST = 2
