@@ -31,6 +31,16 @@ pub struct PeerRecord {
     pub last_seen_ms: Millis,
 }
 
+/// One decrypted DM, persisted so a thread survives a restart (unlike the ephemeral Noise session).
+/// Keyed by the peer's fingerprint; `mine` distinguishes sent from received.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredDm {
+    pub peer: Fingerprint,
+    pub mine: bool,
+    pub timestamp_ms: u64,
+    pub body: Vec<u8>,
+}
+
 /// A packet queued for a peer that was offline when it was sent (store-and-forward).
 #[derive(Debug, Clone)]
 struct Envelope {
@@ -51,6 +61,14 @@ pub trait Store {
 
     fn upsert_peer(&mut self, peer: PeerRecord);
     fn get_peer(&self, fp: &Fingerprint) -> Option<PeerRecord>;
+    /// Every known peer, so the UI can reload its contact list on restart instead of waiting for a
+    /// live announce from each one.
+    fn list_peers(&self) -> Vec<PeerRecord>;
+
+    /// Persist a DM (sent or received) so the thread survives a restart.
+    fn put_dm(&mut self, dm: StoredDm);
+    /// A peer's DM thread, oldest-first, capped at `limit`.
+    fn dm_history(&self, peer: &Fingerprint, limit: usize) -> Vec<StoredDm>;
 
     fn queue_envelope(&mut self, recipient: Fingerprint, packet_bytes: Vec<u8>, now_ms: Millis);
     fn take_envelopes(&mut self, recipient: &Fingerprint) -> Vec<Vec<u8>>;
@@ -64,6 +82,7 @@ pub struct MemoryStore {
     channels: HashMap<String, Vec<StoredMessage>>,
     digests: std::collections::HashSet<[u8; 8]>,
     peers: HashMap<Fingerprint, PeerRecord>,
+    dms: HashMap<Fingerprint, Vec<StoredDm>>,
     envelopes: HashMap<Fingerprint, Vec<Envelope>>,
     history_max: usize,
     history_ms: Millis,
@@ -152,6 +171,28 @@ impl Store for MemoryStore {
         self.peers.get(fp).cloned()
     }
 
+    fn list_peers(&self) -> Vec<PeerRecord> {
+        self.peers.values().cloned().collect()
+    }
+
+    fn put_dm(&mut self, dm: StoredDm) {
+        let thread = self.dms.entry(dm.peer).or_default();
+        thread.push(dm);
+        thread.sort_by_key(|d| d.timestamp_ms);
+        while thread.len() > self.history_max {
+            thread.remove(0);
+        }
+    }
+
+    fn dm_history(&self, peer: &Fingerprint, limit: usize) -> Vec<StoredDm> {
+        let mut v = self.dms.get(peer).cloned().unwrap_or_default();
+        v.sort_by_key(|d| d.timestamp_ms);
+        if v.len() > limit {
+            v = v.split_off(v.len() - limit);
+        }
+        v
+    }
+
     fn queue_envelope(&mut self, recipient: Fingerprint, packet_bytes: Vec<u8>, now_ms: Millis) {
         let q = self.envelopes.entry(recipient).or_default();
         // Expire old envelopes first.
@@ -177,6 +218,7 @@ impl Store for MemoryStore {
         self.channels.clear();
         self.digests.clear();
         self.peers.clear();
+        self.dms.clear();
         self.envelopes.clear();
     }
 }
@@ -247,9 +289,59 @@ mod tests {
         let mut s = store();
         s.put_channel_message(msg(1, "#general", 100));
         s.queue_envelope([9; 32], vec![1], 0);
+        s.put_dm(dm([3; 32], true, 1, b"hi"));
         s.panic_wipe();
         assert!(s.channel_history("#general", 10).is_empty());
         assert!(!s.has_message(&[1; 8]));
         assert!(s.take_envelopes(&[9; 32]).is_empty());
+        assert!(s.list_peers().is_empty());
+        assert!(s.dm_history(&[3; 32], 10).is_empty());
+    }
+
+    fn dm(peer: Fingerprint, mine: bool, ts: u64, body: &[u8]) -> StoredDm {
+        StoredDm {
+            peer,
+            mine,
+            timestamp_ms: ts,
+            body: body.to_vec(),
+        }
+    }
+
+    #[test]
+    fn list_peers_returns_all_upserted() {
+        let mut s = store();
+        assert!(s.list_peers().is_empty());
+        s.upsert_peer(PeerRecord {
+            fingerprint: [1; 32],
+            petname: Some("ava".into()),
+            verified: true,
+            last_eph: [0; 8],
+            last_seen_ms: 5,
+        });
+        s.upsert_peer(PeerRecord {
+            fingerprint: [2; 32],
+            petname: None,
+            verified: false,
+            last_eph: [0; 8],
+            last_seen_ms: 6,
+        });
+        let all = s.list_peers();
+        assert_eq!(all.len(), 2, "both peers should be listable for UI reload");
+        assert!(all.iter().any(|p| p.fingerprint == [1; 32] && p.verified));
+    }
+
+    #[test]
+    fn dm_history_persists_and_orders_oldest_first() {
+        let mut s = store();
+        let peer = [7u8; 32];
+        s.put_dm(dm(peer, true, 100, b"first"));
+        s.put_dm(dm(peer, false, 200, b"second"));
+        s.put_dm(dm([9u8; 32], true, 150, b"other peer")); // different thread
+        let h = s.dm_history(&peer, 10);
+        assert_eq!(h.len(), 2, "only this peer's DMs");
+        assert_eq!(h[0].body, b"first", "oldest first");
+        assert!(h[0].mine, "first was sent by us");
+        assert_eq!(h[1].body, b"second");
+        assert!(!h[1].mine, "second was received");
     }
 }

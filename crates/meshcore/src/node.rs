@@ -12,7 +12,7 @@ use crate::frag::{self, Reassembler};
 use crate::identity::{Fingerprint, LocalIdentity};
 use crate::noise::NoiseSession;
 use crate::relay::{self, RateLimiter, RelayScheduler, SeenCache};
-use crate::store::{PeerRecord, Store, StoredMessage};
+use crate::store::{PeerRecord, Store, StoredDm, StoredMessage};
 use crate::transport::{LinkId, Transport, TransportEvent};
 use crate::wire::{EphId, MsgType, Packet};
 use ed25519_dalek::VerifyingKey;
@@ -260,6 +260,14 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
     /// Send an end-to-end encrypted direct message to a peer (by fingerprint). On first use this
     /// establishes a Noise session, queuing the message until the handshake completes.
     pub fn send_dm(&mut self, peer_fp: Fingerprint, text: &str) {
+        // Persist the outbound DM up front so the thread survives a restart — whether it goes out
+        // now, waits for a handshake, or is store-and-forwarded.
+        self.store.put_dm(StoredDm {
+            peer: peer_fp,
+            mine: true,
+            timestamp_ms: self.clock.now_ms(),
+            body: text.as_bytes().to_vec(),
+        });
         let ready = self
             .noise_sessions
             .get(&peer_fp)
@@ -559,6 +567,13 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         };
         // A successful decrypt proves this session is live, not a zombie — forget any resync tally.
         self.resync_pending.remove(&fp);
+        // Persist the received DM so the thread survives a restart.
+        self.store.put_dm(StoredDm {
+            peer: fp,
+            mine: false,
+            timestamp_ms: self.clock.now_ms(),
+            body: plaintext.clone(),
+        });
         let from_eph = self.fp_to_eph.get(&fp).copied().unwrap_or([0u8; 8]);
         let text = String::from_utf8_lossy(&plaintext).to_string();
         self.events.push(MeshEvent::DmReceived {
@@ -1183,6 +1198,14 @@ mod tests {
             ),
             "the retried handshake should deliver the DM once B has learned A"
         );
+        let a_fp = a.fingerprint();
+        assert!(
+            b.store()
+                .dm_history(&a_fp, 10)
+                .iter()
+                .any(|d| !d.mine && d.body == b"north gate clear"),
+            "the received DM should be persisted so the thread survives a restart"
+        );
     }
 
     /// Verifying a peer starts a message-less session so both ends flip to a bound `DmSession`
@@ -1360,6 +1383,18 @@ mod tests {
             ),
             "after a one-sided restart, the pair must re-sync and DMs must flow again"
         );
+    }
+
+    /// DMs (unlike the ephemeral Noise session) must be persisted so a thread survives a restart.
+    #[test]
+    fn sent_dm_is_persisted() {
+        let mut a = node(1);
+        let fp = [0x42u8; 32];
+        a.send_dm(fp, "cached for restart");
+        let h = a.store().dm_history(&fp, 10);
+        assert_eq!(h.len(), 1, "the outbound DM should be stored");
+        assert!(h[0].mine);
+        assert_eq!(h[0].body, b"cached for restart");
     }
 
     #[test]

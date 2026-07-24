@@ -11,7 +11,7 @@
 
 use meshcore::clock::Millis;
 use meshcore::identity::{Fingerprint, LocalIdentity};
-use meshcore::store::{MemoryStore, PeerRecord, Store, StoredMessage};
+use meshcore::store::{MemoryStore, PeerRecord, Store, StoredDm, StoredMessage};
 use meshcore::{Clock, MeshEvent, MeshNode, Transport, TransportEvent, Tunables};
 use meshcore_store::SqliteStore;
 use std::sync::{Arc, Mutex};
@@ -92,6 +92,15 @@ impl Store for FfiStore {
     fn get_peer(&self, fp: &Fingerprint) -> Option<PeerRecord> {
         delegate!(self, get_peer(fp))
     }
+    fn list_peers(&self) -> Vec<PeerRecord> {
+        delegate!(self, list_peers())
+    }
+    fn put_dm(&mut self, dm: StoredDm) {
+        delegate!(self, put_dm(dm))
+    }
+    fn dm_history(&self, peer: &Fingerprint, limit: usize) -> Vec<StoredDm> {
+        delegate!(self, dm_history(peer, limit))
+    }
     fn queue_envelope(&mut self, recipient: Fingerprint, packet_bytes: Vec<u8>, now_ms: Millis) {
         delegate!(self, queue_envelope(recipient, packet_bytes, now_ms))
     }
@@ -140,6 +149,22 @@ pub struct FfiMessage {
     pub body: String,
     pub timestamp_ms: u64,
     /// True if this node originated the message.
+    pub mine: bool,
+}
+
+/// A persisted peer, for reloading the verified-contacts list on restart.
+#[derive(uniffi::Record)]
+pub struct FfiPeer {
+    pub fingerprint: String,
+    pub petname: Option<String>,
+    pub verified: bool,
+}
+
+/// A persisted DM, for reloading a thread on restart.
+#[derive(uniffi::Record)]
+pub struct FfiDmMessage {
+    pub body: String,
+    pub timestamp_ms: u64,
     pub mine: bool,
 }
 
@@ -230,6 +255,38 @@ impl FfiMeshNode {
                 body: String::from_utf8_lossy(&m.body).to_string(),
                 timestamp_ms: m.timestamp_ms,
                 mine: m.sender == me,
+            })
+            .collect()
+    }
+
+    /// Every known peer from the encrypted store, so the UI can reload its verified contacts on
+    /// restart instead of waiting for each one to re-announce.
+    pub fn list_peers(&self) -> Vec<FfiPeer> {
+        let node = self.inner.lock().unwrap();
+        node.store()
+            .list_peers()
+            .into_iter()
+            .map(|p| FfiPeer {
+                fingerprint: hex(&p.fingerprint),
+                petname: p.petname,
+                verified: p.verified,
+            })
+            .collect()
+    }
+
+    /// A peer's persisted DM thread (oldest-first), so the conversation survives a restart.
+    pub fn dm_history(&self, peer_fingerprint: String, limit: u32) -> Vec<FfiDmMessage> {
+        let Some(fp) = decode_hex32(&peer_fingerprint) else {
+            return Vec::new();
+        };
+        let node = self.inner.lock().unwrap();
+        node.store()
+            .dm_history(&fp, limit as usize)
+            .into_iter()
+            .map(|d| FfiDmMessage {
+                body: String::from_utf8_lossy(&d.body).to_string(),
+                timestamp_ms: d.timestamp_ms,
+                mine: d.mine,
             })
             .collect()
     }
