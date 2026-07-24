@@ -351,6 +351,20 @@ impl FfiMeshNode {
         }
     }
 
+    /// Undo an in-person verification (keeps chat history and petname); re-scan to verify again.
+    pub fn unverify_peer(&self, peer_fingerprint: String) {
+        if let Some(fp) = decode_hex32(&peer_fingerprint) {
+            self.inner.lock().unwrap().unverify_peer(fp);
+        }
+    }
+
+    /// Forget a contact entirely: peer record, DM thread, and live session state.
+    pub fn forget_peer(&self, peer_fingerprint: String) {
+        if let Some(fp) = decode_hex32(&peer_fingerprint) {
+            self.inner.lock().unwrap().forget_peer(fp);
+        }
+    }
+
     /// Start a message-less encrypted session (called right after verification) so the peer's
     /// device also flips to verified immediately, without waiting for a chat message.
     pub fn start_dm_session(&self, peer_fingerprint: String) {
