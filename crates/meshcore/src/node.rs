@@ -1760,13 +1760,10 @@ mod tests {
         );
     }
 
+    type TestNode = MeshNode<RecordingTransport, ManualClock, MemoryStore>;
+
     /// Set up two nodes with an established link and mutual announces; returns (a, b, b_fp, a_fp).
-    fn linked_pair() -> (
-        MeshNode<RecordingTransport, ManualClock, MemoryStore>,
-        MeshNode<RecordingTransport, ManualClock, MemoryStore>,
-        Fingerprint,
-        Fingerprint,
-    ) {
+    fn linked_pair() -> (TestNode, TestNode, Fingerprint, Fingerprint) {
         let mut a = node(1);
         let mut b = node(2);
         a.on_transport_event(TransportEvent::LinkUp {

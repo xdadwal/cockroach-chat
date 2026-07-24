@@ -299,7 +299,7 @@ impl FfiMeshNode {
                 // ever starts with control bytes 0x01/0x02, so this cannot misfire on legacy
                 // pre-framing rows either).
                 let kind = match d.body.first() {
-                    Some(&k) if k >= 1 && k <= 2 && d.body.len() == 1 => k,
+                    Some(&k) if (1..=2).contains(&k) && d.body.len() == 1 => k,
                     _ => 0,
                 };
                 FfiDmMessage {
