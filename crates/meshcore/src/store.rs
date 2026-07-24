@@ -85,9 +85,10 @@ pub trait Store {
     fn panic_wipe(&mut self);
 }
 
-/// Whether a stored DM row is a verification control row (bare kind byte 1 or 2).
+/// Whether a stored DM row is a trust control row: verify-notice (1), verify-ack (2), or the
+/// local key-changed marker (3) — all stored as a bare kind byte.
 pub fn is_control_dm(body: &[u8]) -> bool {
-    body.len() == 1 && (body[0] == 1 || body[0] == 2)
+    body.len() == 1 && (1..=3).contains(&body[0])
 }
 
 #[derive(Default)]

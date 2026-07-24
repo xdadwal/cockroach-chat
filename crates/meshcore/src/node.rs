@@ -57,6 +57,9 @@ pub enum MeshEvent {
         peer_fp: Fingerprint,
         verified: bool,
     },
+    /// A peer we already knew announced a DIFFERENT X25519 key for the same signing identity.
+    /// Legitimate on their reinstall/rotation, but the user should re-verify in person.
+    PeerKeyChanged { peer_fp: Fingerprint },
     /// A link dropped.
     PeerLost { link: LinkId },
     /// Periodic counters for the "Mesh Active" UI / debug screen.
@@ -133,6 +136,9 @@ pub const DM_KIND_VERIFY_NOTICE: u8 = 1;
 /// Control message: automatic reply to a verify-notice — its arrival is the sender's proof
 /// that the pair's encrypted channel works in both directions (empty body).
 pub const DM_KIND_VERIFY_ACK: u8 = 2;
+/// LOCAL-ONLY marker row (never transmitted): this peer's announced key changed after we had
+/// already recorded one — surface "identity changed, re-verify" until a fresh scan clears it.
+pub const DM_KIND_KEY_CHANGED: u8 = 3;
 /// How many unexpected handshakes a peer must send us against a live session before we conclude the
 /// peer restarted and supersede it. >1 so a single stray/late retransmit never resets a good session.
 const RESYNC_HANDSHAKE_THRESHOLD: u8 = 2;
@@ -324,6 +330,10 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         let mut p = self.peer_or_new(fp);
         p.verified = true;
         self.store.upsert_peer(p);
+        // A fresh scan is the resolution for any earlier trust state: clear old control rows
+        // (stale notice/ack pairs and key-changed markers) so confirmation derives cleanly from
+        // the exchange this scan is about to trigger.
+        self.store.delete_dms(&fp, true);
         // Tell the peer, visibly, that we verified them — immediately if a session is ready,
         // otherwise as soon as one completes (finish_session flushes this flag).
         self.notice_pending.insert(fp);
@@ -944,7 +954,24 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         self.eph_keys.insert(pkt.sender, pubkey);
         let fingerprint: Fingerprint = Sha256::digest(pubkey).into();
         self.fp_to_eph.insert(fingerprint, pkt.sender);
-        self.peer_static_dh.insert(fingerprint, dh_pub);
+        // Downgrades are loud: a contact whose announced X25519 key changes under the same
+        // signing identity gets a persisted local marker + event ("identity changed — re-verify")
+        // until a fresh scan clears it. Detection is in-memory (live sessions only); the signed
+        // announce means only the Ed25519 keyholder can trigger this.
+        let prev_dh = self.peer_static_dh.insert(fingerprint, dh_pub);
+        if let Some(prev) = prev_dh {
+            if prev != dh_pub && self.store.get_peer(&fingerprint).is_some() {
+                self.store.put_dm(StoredDm {
+                    peer: fingerprint,
+                    mine: false,
+                    timestamp_ms: self.clock.now_ms(),
+                    body: vec![DM_KIND_KEY_CHANGED],
+                });
+                self.events.push(MeshEvent::PeerKeyChanged {
+                    peer_fp: fingerprint,
+                });
+            }
+        }
         // Preserve any in-person verification and petname the user has set for this identity;
         // a fresh announce must never silently downgrade a peer we've verified face-to-face.
         let existing = self.store.get_peer(&fingerprint);
@@ -975,12 +1002,24 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         let Some((channel, text)) = decode_channel(&pkt.payload, &self.cfg) else {
             return;
         };
-        let verified = self
+        // Attribution, not alarm: if we know the sender's key, the signature MUST check out —
+        // a known-key/bad-signature message is a forgery (or eph collision) and is dropped
+        // outright rather than delivered with a scary flag. If we don't know the key yet,
+        // deliver unattributed (`verified: false`) — the neutral "haven't heard their announce"
+        // case, which the UI renders quietly, never as a warning.
+        let verified = match self
             .eph_keys
             .get(&pkt.sender)
             .and_then(|pk| VerifyingKey::from_bytes(pk).ok())
-            .map(|vk| pkt.verify(&vk).is_ok())
-            .unwrap_or(false);
+        {
+            Some(vk) => {
+                if pkt.verify(&vk).is_err() {
+                    return; // forged: claims a known identity but isn't signed by it
+                }
+                true
+            }
+            None => false,
+        };
 
         let digest = pkt.digest();
         self.store.put_channel_message(StoredMessage {
@@ -2026,6 +2065,104 @@ mod tests {
         a.forget_peer(b_fp);
         assert!(a.store().dm_history(&b_fp, 10).is_empty());
         assert!(a.store().get_peer(&b_fp).is_none());
+    }
+
+    /// A channel message claiming a KNOWN identity but not signed by it is a forgery: dropped
+    /// outright. A message from a sender whose announce we haven't heard still delivers,
+    /// unattributed — that case is neutral, not an alarm.
+    #[test]
+    fn forged_channel_message_dropped_unknown_sender_delivers() {
+        let (mut a, mut b, _b_fp, _a_fp) = linked_pair();
+        a.join_channel("#general");
+        b.join_channel("#general");
+
+        // Forgery: eve signs a packet that claims A's eph as sender. B knows A's key -> drop.
+        let eve = LocalIdentity::from_seed(&[9u8; 32]);
+        let payload = encode_channel("#general", "impostor", &Tunables::default());
+        let mut pkt = Packet::new(
+            MsgType::ChannelMessage,
+            5,
+            2000,
+            a.identity.eph_id(),
+            None,
+            payload,
+        );
+        pkt.sign(eve.signing_key());
+        for f in frag::split(&pkt.encode(), pkt.digest(), 182).unwrap() {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        assert!(
+            !b.take_events()
+                .iter()
+                .any(|e| matches!(e, MeshEvent::MessageReceived { .. })),
+            "a known-key/bad-signature channel message must be dropped"
+        );
+
+        // Unknown sender: eve under her OWN eph, whose announce B never heard -> delivers,
+        // unattributed.
+        let payload = encode_channel("#general", "hello from a stranger", &Tunables::default());
+        let mut pkt = Packet::new(
+            MsgType::ChannelMessage,
+            5,
+            3000,
+            eve.eph_id(),
+            None,
+            payload,
+        );
+        pkt.sign(eve.signing_key());
+        for f in frag::split(&pkt.encode(), pkt.digest(), 182).unwrap() {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        assert!(
+            b.take_events().iter().any(|e| matches!(
+                e,
+                MeshEvent::MessageReceived { verified: false, body, .. } if body == "hello from a stranger"
+            )),
+            "unknown-sender messages deliver unattributed"
+        );
+    }
+
+    /// A known peer announcing a different X25519 key raises PeerKeyChanged and persists a
+    /// kind-3 marker; a fresh in-person verify clears the marker.
+    #[test]
+    fn key_change_marks_peer_and_reverify_clears() {
+        let (mut a, _b, b_fp, _a_fp) = linked_pair();
+
+        // The same signing identity announces a different DH key (e.g. B reinstalled the DH
+        // half). Craft B's announce with a mutated X25519 key.
+        let b_id = LocalIdentity::from_seed(&[2u8; 32]);
+        let mut new_dh = *b_id.dh_public().as_bytes();
+        new_dh[0] ^= 0xff;
+        let payload = encode_announce(b_id.verifying_key().as_bytes(), &new_dh, "tester");
+        let mut pkt = Packet::new(MsgType::Announce, 5, 5000, b_id.eph_id(), None, payload);
+        pkt.sign(b_id.signing_key());
+        for f in frag::split(&pkt.encode(), pkt.digest(), 182).unwrap() {
+            a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+
+        assert!(
+            a.take_events()
+                .iter()
+                .any(|e| matches!(e, MeshEvent::PeerKeyChanged { peer_fp } if *peer_fp == b_fp)),
+            "the key change must be surfaced"
+        );
+        assert!(
+            a.store()
+                .dm_history(&b_fp, 10)
+                .iter()
+                .any(|d| d.body == vec![DM_KIND_KEY_CHANGED]),
+            "a persistent key-changed marker must be stored"
+        );
+
+        // Re-verifying in person resolves the warning.
+        a.verify_peer(b_fp);
+        assert!(
+            !a.store()
+                .dm_history(&b_fp, 10)
+                .iter()
+                .any(|d| d.body == vec![DM_KIND_KEY_CHANGED]),
+            "a fresh scan clears the marker"
+        );
     }
 
     /// DMs (unlike the ephemeral Noise session) must be persisted so a thread survives a restart.

@@ -345,9 +345,10 @@ impl Store for SqliteStore {
 
     fn delete_dms(&mut self, fp: &Fingerprint, only_control: bool) {
         if only_control {
-            // Control rows are exactly one byte: kind 0x01 (verify-notice) or 0x02 (verify-ack).
+            // Control rows are exactly one byte: 0x01 verify-notice, 0x02 verify-ack,
+            // 0x03 key-changed marker.
             let _ = self.conn.execute(
-                "DELETE FROM dms WHERE peer = ?1 AND length(body) = 1 AND (body = x'01' OR body = x'02')",
+                "DELETE FROM dms WHERE peer = ?1 AND length(body) = 1 AND (body = x'01' OR body = x'02' OR body = x'03')",
                 params![&fp[..]],
             );
         } else {

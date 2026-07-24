@@ -144,6 +144,11 @@ pub enum FfiEvent {
         /// 2 = verify-ack (automatic reply proving the channel works both ways).
         kind: u8,
     },
+    /// A known peer announced a different X25519 key for the same signing identity — the user
+    /// should re-verify in person.
+    PeerKeyChanged {
+        peer: String,
+    },
     /// A Noise session with a peer completed (`verified` false means identity binding failed).
     DmSession {
         peer: String,
@@ -299,7 +304,7 @@ impl FfiMeshNode {
                 // ever starts with control bytes 0x01/0x02, so this cannot misfire on legacy
                 // pre-framing rows either).
                 let kind = match d.body.first() {
-                    Some(&k) if (1..=2).contains(&k) && d.body.len() == 1 => k,
+                    Some(&k) if (1..=3).contains(&k) && d.body.len() == 1 => k,
                     _ => 0,
                 };
                 FfiDmMessage {
@@ -472,6 +477,9 @@ fn to_ffi(e: MeshEvent) -> Option<FfiEvent> {
             sender: hex(&sender_fp),
             text,
             kind,
+        }),
+        MeshEvent::PeerKeyChanged { peer_fp } => Some(FfiEvent::PeerKeyChanged {
+            peer: hex(&peer_fp),
         }),
         MeshEvent::DmSession { peer_fp, verified } => Some(FfiEvent::DmSession {
             peer: hex(&peer_fp),
