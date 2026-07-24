@@ -42,11 +42,14 @@ pub enum MeshEvent {
     },
     /// An end-to-end encrypted direct message was decrypted for us. `verified` is always true
     /// here — a DM only reaches this point after a mutually-authenticated Noise session whose
-    /// remote static key matched the sender's announced identity.
+    /// remote static key matched the sender's announced identity. `kind` is one of the
+    /// `DM_KIND_*` constants: ordinary text, or an in-person-verification notice/ack control
+    /// message (`text` is empty for control kinds).
     DmReceived {
         sender_fp: Fingerprint,
         from_eph: EphId,
         text: String,
+        kind: u8,
     },
     /// A Noise session with a peer became ready (or was rejected). `verified` distinguishes an
     /// identity-bound session from a rejected/mismatched one.
@@ -113,11 +116,23 @@ pub struct MeshNode<T: Transport, C: Clock, S: Store> {
     /// peer lost its half and keeps re-initiating; past a small threshold we treat our session as a
     /// zombie and let the new handshake supersede it, instead of ignoring it forever.
     resync_pending: HashMap<Fingerprint, u8>,
+    /// Peers we verified in person but haven't yet told: a verify-notice goes out as soon as an
+    /// identity-bound session is (or becomes) ready. In-memory only — if the process restarts
+    /// before it sends, the UI's "awaiting confirmation" state prompts a re-scan.
+    notice_pending: BTreeSet<Fingerprint>,
 }
 
 /// How long to wait before re-sending a stalled initiator handshake, and how many times to try.
 const DM_HANDSHAKE_RETRY_MS: Millis = 2000;
 const DM_HANDSHAKE_MAX_ATTEMPTS: u32 = 12;
+
+/// DM plaintext framing: `kind(1) || body`. Ordinary chat text.
+pub const DM_KIND_TEXT: u8 = 0;
+/// Control message: "I verified you in person" (sent once after a QR scan, empty body).
+pub const DM_KIND_VERIFY_NOTICE: u8 = 1;
+/// Control message: automatic reply to a verify-notice — its arrival is the sender's proof
+/// that the pair's encrypted channel works in both directions (empty body).
+pub const DM_KIND_VERIFY_ACK: u8 = 2;
 /// How many unexpected handshakes a peer must send us against a live session before we conclude the
 /// peer restarted and supersede it. >1 so a single stray/late retransmit never resets a good session.
 const RESYNC_HANDSHAKE_THRESHOLD: u8 = 2;
@@ -159,6 +174,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             handshake_last_ms: HashMap::new(),
             handshake_attempts: HashMap::new(),
             resync_pending: HashMap::new(),
+            notice_pending: BTreeSet::new(),
         }
     }
 
@@ -276,7 +292,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             .map(|s| s.is_ready())
             .unwrap_or(false);
         if ready {
-            self.encrypt_and_send_dm(peer_fp, text);
+            self.encrypt_and_send_dm(peer_fp, DM_KIND_TEXT, text.as_bytes());
             return;
         }
         // If we don't currently know where this peer is (no announce seen / they've gone), hold the
@@ -308,6 +324,10 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         let mut p = self.peer_or_new(fp);
         p.verified = true;
         self.store.upsert_peer(p);
+        // Tell the peer, visibly, that we verified them — immediately if a session is ready,
+        // otherwise as soon as one completes (finish_session flushes this flag).
+        self.notice_pending.insert(fp);
+        self.try_send_verify_notice(fp);
     }
 
     /// Establish an encrypted session with a peer WITHOUT sending a message. Called right after
@@ -377,6 +397,7 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         self.handshake_last_ms.clear();
         self.handshake_attempts.clear();
         self.resync_pending.clear();
+        self.notice_pending.clear();
         self.events.clear();
     }
 
@@ -532,10 +553,12 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
             peer_fp: fp,
             verified: true,
         });
+        // The freshly-ready session may owe the peer an in-person verification notice.
+        self.try_send_verify_notice(fp);
         // Drain outbound DMs queued during the handshake.
         let pending = self.pending_dms.remove(&fp).unwrap_or_default();
         for text in pending {
-            self.encrypt_and_send_dm(fp, &text);
+            self.encrypt_and_send_dm(fp, DM_KIND_TEXT, text.as_bytes());
         }
         // Drain inbound DMs that overtook the final handshake message.
         let inbound = self.pending_inbound_dms.remove(&fp).unwrap_or_default();
@@ -544,17 +567,46 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         }
     }
 
-    fn encrypt_and_send_dm(&mut self, fp: Fingerprint, text: &str) {
+    /// Encrypt and send one framed DM plaintext (`kind || body`) over the peer's ready session.
+    fn encrypt_and_send_dm(&mut self, fp: Fingerprint, kind: u8, body: &[u8]) {
         let ciphertext = {
             let Some(session) = self.noise_sessions.get_mut(&fp) else {
                 return;
             };
-            match session.encrypt(text.as_bytes()) {
+            let mut plaintext = Vec::with_capacity(1 + body.len());
+            plaintext.push(kind);
+            plaintext.extend_from_slice(body);
+            match session.encrypt(&plaintext) {
                 Ok(c) => c,
                 Err(_) => return,
             }
         };
         self.send_directed(MsgType::DirectMessage, fp, ciphertext);
+    }
+
+    /// Persist and send a control DM (verify-notice / verify-ack). Only called with a ready
+    /// session. The stored body is the bare kind byte, which is how "confirmed both ends" is
+    /// later derived from history without a store schema change.
+    fn send_control_dm(&mut self, fp: Fingerprint, kind: u8) {
+        self.store.put_dm(StoredDm {
+            peer: fp,
+            mine: true,
+            timestamp_ms: self.clock.now_ms(),
+            body: vec![kind],
+        });
+        self.encrypt_and_send_dm(fp, kind, &[]);
+    }
+
+    /// If we've verified this peer and owe them the notice, send it over the (ready) session.
+    fn try_send_verify_notice(&mut self, fp: Fingerprint) {
+        let ready = self
+            .noise_sessions
+            .get(&fp)
+            .map(|s| s.is_ready())
+            .unwrap_or(false);
+        if ready && self.notice_pending.remove(&fp) {
+            self.send_control_dm(fp, DM_KIND_VERIFY_NOTICE);
+        }
     }
 
     fn handle_direct_message(&mut self, pkt: &Packet) {
@@ -598,20 +650,41 @@ impl<T: Transport, C: Clock, S: Store> MeshNode<T, C, S> {
         };
         // A successful decrypt proves this session is live, not a zombie — forget any resync tally.
         self.resync_pending.remove(&fp);
-        // Persist the received DM so the thread survives a restart.
+        // Split the kind prefix. Anything that doesn't look framed (empty, or a first byte that
+        // isn't a known kind) is treated as legacy plain text rather than dropped.
+        let (kind, body) = match plaintext.split_first() {
+            Some((&k, rest)) if k <= DM_KIND_VERIFY_ACK => (k, rest),
+            _ => (DM_KIND_TEXT, &plaintext[..]),
+        };
+        // Persist so the thread survives a restart: text is stored bare (as it always was);
+        // control messages store just their kind byte.
         self.store.put_dm(StoredDm {
             peer: fp,
             mine: false,
             timestamp_ms: self.clock.now_ms(),
-            body: plaintext.clone(),
+            body: if kind == DM_KIND_TEXT {
+                body.to_vec()
+            } else {
+                vec![kind]
+            },
         });
         let from_eph = self.fp_to_eph.get(&fp).copied().unwrap_or([0u8; 8]);
-        let text = String::from_utf8_lossy(&plaintext).to_string();
+        let text = if kind == DM_KIND_TEXT {
+            String::from_utf8_lossy(body).to_string()
+        } else {
+            String::new()
+        };
         self.events.push(MeshEvent::DmReceived {
             sender_fp: fp,
             from_eph,
             text,
+            kind,
         });
+        // A verify-notice gets an automatic ack — the sender's proof that this direction works.
+        // Acks never trigger replies, so the exchange can't loop.
+        if kind == DM_KIND_VERIFY_NOTICE {
+            self.send_control_dm(fp, DM_KIND_VERIFY_ACK);
+        }
     }
 
     /// Build, sign, and flood a directed packet (DM or handshake) toward `peer_fp`'s current eph.
@@ -1786,6 +1859,95 @@ mod tests {
         assert!(
             a_verified && b_verified,
             "mutual simultaneous scan must converge (a: {a_verified}, b: {b_verified})"
+        );
+    }
+
+    /// In-person verification produces a visible two-sided exchange: the scanner's phone sends a
+    /// verify-notice once the session is ready, the peer auto-replies with a verify-ack, and both
+    /// legs are persisted — the returning ack is the scanner's proof the channel works both ways.
+    #[test]
+    fn verify_notice_and_ack_roundtrip() {
+        let (mut a, mut b, b_fp, a_fp) = linked_pair();
+
+        // The scan flow: verify + message-less session start (mirrors BleController.verify()).
+        a.verify_peer(b_fp);
+        a.start_dm_session(b_fp);
+        for _ in 0..8 {
+            for f in drain(&a) {
+                b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+            for f in drain(&b) {
+                a.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+            }
+        }
+
+        let b_evs = b.take_events();
+        assert!(
+            b_evs.iter().any(|e| matches!(
+                e,
+                MeshEvent::DmReceived {
+                    kind: DM_KIND_VERIFY_NOTICE,
+                    ..
+                }
+            )),
+            "B should receive A's verify-notice, got {b_evs:?}"
+        );
+        let a_evs = a.take_events();
+        assert!(
+            a_evs.iter().any(|e| matches!(
+                e,
+                MeshEvent::DmReceived {
+                    kind: DM_KIND_VERIFY_ACK,
+                    ..
+                }
+            )),
+            "A should receive B's automatic verify-ack, got {a_evs:?}"
+        );
+
+        // Exactly one ack flows (acks never trigger replies), and all four legs are persisted
+        // with the bare-kind-byte convention.
+        let a_hist = a.store().dm_history(&b_fp, 10);
+        let b_hist = b.store().dm_history(&a_fp, 10);
+        assert_eq!(
+            a_hist
+                .iter()
+                .filter(|d| d.body == vec![DM_KIND_VERIFY_ACK] && !d.mine)
+                .count(),
+            1,
+            "A's thread should hold exactly one inbound ack: {a_hist:?}"
+        );
+        assert!(
+            a_hist
+                .iter()
+                .any(|d| d.body == vec![DM_KIND_VERIFY_NOTICE] && d.mine),
+            "A's thread should hold its own outbound notice"
+        );
+        assert!(
+            b_hist
+                .iter()
+                .any(|d| d.body == vec![DM_KIND_VERIFY_NOTICE] && !d.mine),
+            "B's thread should hold the inbound notice"
+        );
+        assert_eq!(
+            b_hist
+                .iter()
+                .filter(|d| d.body == vec![DM_KIND_VERIFY_ACK] && d.mine)
+                .count(),
+            1,
+            "B's thread should hold exactly one outbound ack (no loops)"
+        );
+
+        // Ordinary text still round-trips as kind 0 after the control exchange.
+        a.send_dm(b_fp, "hello after verify");
+        for f in drain(&a) {
+            b.on_transport_event(TransportEvent::FrameReceived { link: 1, frame: f });
+        }
+        assert!(
+            b.take_events().iter().any(|e| matches!(
+                e,
+                MeshEvent::DmReceived { kind: DM_KIND_TEXT, text, .. } if text == "hello after verify"
+            )),
+            "text DMs must still deliver as kind 0"
         );
     }
 
