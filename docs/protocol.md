@@ -81,7 +81,9 @@ relayed but not parsed.
 
 | Parameter | Default | Notes |
 |-----------|---------|-------|
-| TTL (origin) | 7 | clamped to 5 at local degree ≥ 6 |
+| TTL, announce (origin) | 15 | clamped to 12 at local degree ≥ 6 |
+| TTL, channel (origin) | 10 | clamped to 7 at local degree ≥ 6 |
+| TTL, DM + handshake (origin) | 10 | clamped to 7 at local degree ≥ 6; always equal for both types |
 | Jitter before rebroadcast | 10–220 ms uniform | |
 | Suppression threshold | 3 | cancel a scheduled rebroadcast after hearing ≥3 copies |
 | Rebroadcast probability | 1.0 / 1.0 / 0.85 → *see note* | by degree tier (≤3 / ≤6 / >6) |
