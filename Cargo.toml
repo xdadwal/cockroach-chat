@@ -17,7 +17,7 @@ license = "MIT"
 repository = "https://github.com/xdadwal/cockroach-chat"
 
 [workspace.dependencies]
-ed25519-dalek = { version = "2", features = ["rand_core"] }
+ed25519-dalek = { version = "3", features = ["rand_core"] }
 x25519-dalek = { version = "2", features = ["static_secrets"] }
 sha2 = "0.10"
 rand = "0.8"
