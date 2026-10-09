@@ -168,7 +168,8 @@ val EnStrings = Strings(
     langTitle = "Choose your language",
     langSubtitle = "You can change this later on the Me page.",
     langContinue = "Continue",
-    onbTagline = "No sign-up. No servers. Pick a name people nearby will see — you can change it anytime.",
+    onbTagline = "Educational prototype. Unaudited; not for emergencies or personal safety. " +
+        "Pick a name people nearby will see.",
     onbNameLabel = "Display name · shown on the wire",
     onbNamePlaceholder = "your name",
     onbNameWarn = "Names are not identity. Anyone can use any name until you verify them in person.",
@@ -186,8 +187,8 @@ val EnStrings = Strings(
     tabVerified = "Verified",
     navFeed = "Feed",
     navMe = "Me",
-    publicBanner = "Public broadcast. Everyone in range reads this — including police.",
-    e2eBanner = "Encrypted to this device. Only you two can read it — but metadata still travels, and a seized phone still holds this thread.",
+    publicBanner = "Public broadcast. Anyone in range may read this, including unintended recipients.",
+    e2eBanner = "End-to-end encryption is intended to protect message content. This implementation is unaudited; metadata and messages on compromised devices remain exposed.",
     composerAnnounce = "Broadcast to everyone in range…",
     composerChannel = "Message %s…",
     composerDm = "Encrypted message…",
@@ -201,7 +202,7 @@ val EnStrings = Strings(
     channelQuiet = "quiet · no messages yet",
     someone = "someone",
     dmTabBanner = "Your encrypted DMs — end-to-end encrypted to each device.",
-    dmEmpty = "Verify people in person to build a private, spoof-proof circle.",
+    dmEmpty = "Verify fingerprints in person before exchanging experimental DMs. Device compromise remains a risk.",
     channelPublicOwnerless = "public · ownerless",
     dmVerifiedSubtitle = "verified · your petname",
     dmNotVerified = "not verified",
@@ -282,17 +283,18 @@ val EnStrings = Strings(
     creditsFooterSub = "The work this app is built on",
     creditsTitle = "Credits",
     creditsSubtitle = "open source",
-    creditsIntro = "Cockroach Chat is assembled almost entirely from work other people gave away. " +
-        "This page names them.",
+    creditsIntro = "Cockroach Chat is published solely for education, research, and controlled experimentation. " +
+        "Unaudited and provided as-is under the MIT License, without warranty. Not for emergencies or personal safety. " +
+        "Educational purpose does not restrict the permissions in the MIT License.",
     creditsType = "Type",
     creditsCrypto = "Cryptography",
     creditsCore = "Core & bindings",
     creditsAndroid = "App",
     creditsTooling = "Tooling",
-    creditsThanks = "We hand-roll no cryptography. Whatever safety this app offers, these people " +
-        "built it — the mistakes are ours alone.",
-    creditsFull = "Font licences ship inside this app. The full dependency list is in NOTICE.md " +
-        "in the source repository.",
+    creditsThanks = "These credits acknowledge third-party work. They do not imply affiliation, sponsorship, " +
+        "or endorsement. The project does not endorse any political movement, organization, or user activity.",
+    creditsFull = "The MIT License, project notice, and font licences ship inside this APK. " +
+        "See DISCLAIMER.md and NOTICE.md in the source repository for purpose, limitations, and third-party notices.",
     channelNames = mapOf(
         "general" to "general", "alerts" to "alerts", "medics" to "medics",
         "supplies" to "supplies", "lost+found" to "lost+found", "exits" to "exits",
@@ -304,7 +306,8 @@ val HiStrings = Strings(
     langTitle = "अपनी भाषा चुनें",
     langSubtitle = "आप इसे बाद में 'Me' पेज पर बदल सकते हैं।",
     langContinue = "जारी रखें",
-    onbTagline = "कोई साइन-अप नहीं। कोई सर्वर नहीं। एक नाम चुनें जो आस-पास के लोग देखेंगे — इसे कभी भी बदला जा सकता है।",
+    onbTagline = "शैक्षिक प्रयोग। स्वतंत्र सुरक्षा ऑडिट नहीं हुआ है; आपातकाल या व्यक्तिगत सुरक्षा के लिए नहीं। " +
+        "एक नाम चुनें जो आस-पास के लोग देखेंगे।",
     onbNameLabel = "प्रदर्शित नाम · नेटवर्क पर दिखेगा",
     onbNamePlaceholder = "आपका नाम",
     onbNameWarn = "नाम पहचान नहीं है। जब तक आप किसी को आमने-सामने सत्यापित न करें, कोई भी कोई भी नाम इस्तेमाल कर सकता है।",
@@ -322,8 +325,8 @@ val HiStrings = Strings(
     tabVerified = "वेरिफाइड",
     navFeed = "सूचना",
     navMe = "मैं",
-    publicBanner = "सार्वजनिक प्रसारण। रेंज में मौजूद हर कोई इसे पढ़ सकता है — पुलिस सहित।",
-    e2eBanner = "इस डिवाइस के लिए एन्क्रिप्टेड। केवल आप दोनों इसे पढ़ सकते हैं — पर मेटाडेटा फिर भी यात्रा करता है, और ज़ब्त फ़ोन इस बातचीत को अपने पास रखता है।",
+    publicBanner = "सार्वजनिक प्रसारण। रेंज में कोई भी इसे पढ़ सकता है, वे लोग भी जिन्हें आप नहीं जानते।",
+    e2eBanner = "एंड-टू-एंड एन्क्रिप्शन का उद्देश्य संदेशों की सामग्री की रक्षा करना है। इस ऐप का स्वतंत्र सुरक्षा ऑडिट नहीं हुआ है; मेटाडेटा और असुरक्षित डिवाइस पर संदेश उजागर हो सकते हैं।",
     composerAnnounce = "रेंज में सभी को प्रसारित करें…",
     composerChannel = "%s में संदेश…",
     composerDm = "एन्क्रिप्टेड संदेश…",
@@ -337,7 +340,7 @@ val HiStrings = Strings(
     channelQuiet = "शांत · अभी कोई संदेश नहीं",
     someone = "कोई",
     dmTabBanner = "आपके एन्क्रिप्टेड DM — प्रत्येक डिवाइस के लिए एंड-टू-एंड एन्क्रिप्टेड।",
-    dmEmpty = "एक निजी, सुरक्षित मंडली बनाने के लिए लोगों को आमने-सामने सत्यापित करें।",
+    dmEmpty = "प्रयोग के दौरान DM भेजने से पहले फ़िंगरप्रिंट आमने-सामने सत्यापित करें। डिवाइस से छेड़छाड़ का जोखिम फिर भी रहता है।",
     channelPublicOwnerless = "सार्वजनिक · बिना स्वामी",
     dmVerifiedSubtitle = "सत्यापित · आपका उपनाम",
     dmNotVerified = "सत्यापित नहीं",
@@ -418,16 +421,18 @@ val HiStrings = Strings(
     creditsFooterSub = "जिनके काम पर यह ऐप बना है",
     creditsTitle = "श्रेय",
     creditsSubtitle = "ओपन सोर्स",
-    creditsIntro = "कॉकरोच चैट लगभग पूरी तरह उस काम से बना है जो दूसरे लोगों ने मुफ़्त में साझा किया। " +
-        "यह पन्ना उनके नाम दर्ज करता है।",
+    creditsIntro = "कॉकरोच चैट केवल शिक्षा, शोध और नियंत्रित प्रयोग के उद्देश्य से प्रकाशित है। " +
+        "इसका स्वतंत्र सुरक्षा ऑडिट नहीं हुआ है। MIT लाइसेंस के तहत यह जैसा है वैसा, बिना किसी वारंटी के उपलब्ध है। " +
+        "आपातकाल या व्यक्तिगत सुरक्षा के लिए नहीं। शैक्षिक उद्देश्य MIT लाइसेंस की अनुमतियों को सीमित नहीं करता।",
     creditsType = "टाइपफ़ेस",
     creditsCrypto = "क्रिप्टोग्राफ़ी",
     creditsCore = "कोर और बाइंडिंग",
     creditsAndroid = "ऐप",
     creditsTooling = "उपकरण",
-    creditsThanks = "हम कोई क्रिप्टोग्राफ़ी खुद नहीं लिखते। यह ऐप जितना भी सुरक्षित है, वह इन्हीं लोगों " +
-        "का बनाया हुआ है — ग़लतियाँ सिर्फ़ हमारी हैं।",
-    creditsFull = "फ़ॉन्ट लाइसेंस इसी ऐप के भीतर मौजूद हैं। पूरी सूची सोर्स रिपॉज़िटरी की NOTICE.md में है।",
+    creditsThanks = "यह श्रेय तीसरे पक्ष के काम को स्वीकार करता है; इससे संबद्धता, प्रायोजन या समर्थन न समझें। " +
+        "यह परियोजना किसी राजनीतिक आंदोलन, संगठन या उपयोगकर्ता की गतिविधि का समर्थन नहीं करती।",
+    creditsFull = "MIT लाइसेंस, परियोजना की सूचना और फ़ॉन्ट लाइसेंस इस APK में शामिल हैं। " +
+        "उद्देश्य, सीमाओं और तीसरे पक्ष की सूचनाओं के लिए सोर्स रिपॉज़िटरी में DISCLAIMER.md और NOTICE.md देखें।",
     channelNames = mapOf(
         "general" to "सामान्य", "alerts" to "चेतावनी", "medics" to "चिकित्सा",
         "supplies" to "आपूर्ति", "lost+found" to "खोया-पाया", "exits" to "निकास",

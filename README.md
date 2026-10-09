@@ -2,43 +2,67 @@
 
 # Cockroach Chat
 
-**You cannot squash a signal.**
+**An educational experiment in Bluetooth mesh messaging.**
 
-A decentralized, serverless, peer-to-peer messenger that works entirely over **Bluetooth LE —
-no internet, no cell, no servers, no accounts.** Built for protests, disasters, and network
-blackouts. Named for the thing that survives when the lights go out.
+Cockroach Chat is developed and published solely for **education, research, and controlled
+experimentation** with peer-to-peer messaging over Bluetooth LE. It explores local message
+relay and encrypted sessions without an internet connection, cellular service, or user accounts.
+It is **not intended for emergency, disaster-response, personal-safety, or other critical use**.
 
-Every phone is both a client and a relay. Messages hop phone-to-phone across a dense crowd, so
-the network exists only as long as people's radios are on — and it belongs to no one.
+Participating phones can act as clients and relays. Message forwarding depends on nearby
+participating devices and available radio links.
 
-> ## ⚠️ Under active development — and unaudited
+**[Download the Android APK (v0.1.0)](https://github.com/xdadwal/cockroach-chat/releases/download/v0.1.0/cockroach-chat-0.1.0.apk)**
+· [All releases and checksums](https://github.com/xdadwal/cockroach-chat/releases)
+
+## Install for experimentation on Android
+
+Requires **Android 8.0 or newer**. The APK supports ARM64, 32-bit ARM, and x86_64 devices.
+
+1. Open the download link above on your phone and download `cockroach-chat-0.1.0.apk`.
+2. Open the downloaded file. If Android asks, allow **Install unknown apps** for the browser
+   or file manager you used, then tap **Install**. You can turn that permission off afterward.
+3. Open Cockroach Chat, turn on Bluetooth, and grant the permissions requested for nearby discovery.
+   Nearby users also need the app installed to chat over the mesh.
+
+Future releases signed with the same release key can update the app in place. A development APK
+uses a different signing key: Android cannot replace it with this release. Uninstalling it first
+erases its local identity and messages, so only do that if you are ready to lose that data.
+
+The release includes `SHA256SUMS`; see [SECURITY.md](SECURITY.md#verifying-a-release) for checksum
+and signing-certificate verification. The app is under active development and unaudited; read
+the limitations below before experimenting with it.
+
+> ## Educational prototype — unaudited and provided as-is
 >
-> This app is meant to be used in the field, and we'd rather it be in your hands than withheld.
-> Use it knowing three things:
+> This software is an experiment, not a safety or emergency communications service.
+> It is supplied without warranty under the [MIT License](LICENSE). Read the
+> [educational-purpose and non-endorsement notice](DISCLAIMER.md).
+> Use only in lawful, authorized experiments with consenting participants.
 >
 > **It may not work as expected.** Especially in dense crowds, heavy interference or jamming, on
 > low battery, or on Android builds we've never seen. Delivery is best-effort — a message that
-> looks sent may never arrive. **Always have a fallback that doesn't depend on this app.**
+> looks sent may never arrive. **Do not rely on it for safety or essential communications.**
 >
 > **It cannot make you anonymous.** Encryption protects what you say, not the fact that a radio
 > near you is speaking. A co-located observer can correlate timing and signal strength no matter
 > what we encrypt.
 >
-> **The crypto is unaudited.** The libraries are vetted (Noise via `snow`, ed25519-dalek,
+> **The implementation is unaudited.** It uses established libraries (Noise via `snow`, ed25519-dalek,
 > SQLCipher) and there's a written threat model, but nobody independent has reviewed how we put
 > them together.
 >
-> **Read [`docs/threat-model.md`](docs/threat-model.md) before deciding this fits your situation.**
+> **Read [`docs/threat-model.md`](docs/threat-model.md) for the limitations of the experiment.**
 
-**Status: 🚧 In active development. Android only.** Validated on Android hardware
-(Galaxy S23 ↔ OnePlus). Built in the open — see [contributing](CONTRIBUTING.md) and the
-[threat model](docs/threat-model.md).
+**Status: 🚧 Experimental. Android only.** Previous project testing used Android hardware
+(Galaxy S23 ↔ OnePlus); this is not certification or evidence of performance in other conditions.
+See [contributing](CONTRIBUTING.md) and the [threat model](docs/threat-model.md).
 
 ---
 
 ## Screens
 
-Android · dark · English / हिन्दी.
+Earlier prototype screenshots · Android · dark · English / हिन्दी.
 
 | Announcement | Channels | Encrypted DM | Me |
 |:---:|:---:|:---:|:---:|
@@ -46,43 +70,47 @@ Android · dark · English / हिन्दी.
 
 ---
 
-## Field principles
+## Design principles
 
 The whole app is built to these:
 
 1. **Never fake trust. Never fake connectivity.** If we're unsure, the UI says unsure.
-2. **Glanceable in sun or dark, one hand, under duress.**
-3. **A field radio, not a social app.**
-4. **Screen on = you carry the network.**
+2. **Readable controls and visible connection state.**
+3. **A small, inspectable mesh-network experiment.**
+4. **Participation depends on device, radio, and operating-system behavior.**
 
 ---
 
-## What works today
+## Implemented features
 
-Proven on real hardware (Galaxy S23 ↔ OnePlus, airplane mode):
+These features have project tests and limited hardware observations, not an independent audit
+or a guarantee of delivery, security, or suitability:
 
 - **Two phones chat offline over BLE** — discover, connect (dual central + peripheral GATT),
   relay, and exchange messages with **no internet**, each one Ed25519 signature-verified.
-- **Always-on relay** — the mesh runs in a foreground service, so it keeps carrying messages
+- **Background relay** — the mesh runs in a foreground service, so it keeps carrying messages
   when the app is backgrounded or the screen is locked. Battery-aware: drops to low-power BLE
   scanning/advertising when idle.
 - **Public channels** — ownerless, join-by-name (`#general`, `#alerts`, `#medics`, `#supplies`,
   `#lost+found`, `#exits`), treated honestly as **public squares** (anyone in range can read,
-  including police). The Announcement broadcast is rate-limited to 1/min; channels to 2/10s.
+  including unintended recipients). The Announcement broadcast is rate-limited to 1/min;
+  channels to 2/10s.
 - **End-to-end encrypted DMs** — Noise XX with **MITM-binding** (the encrypted session must match
-  the peer's announced key). Handshakes retry until they land, so DMs deliver reliably.
+  the peer's announced key). Handshakes use bounded retries; delivery can still fail.
 - **In-person verification** — scan a peer's QR fingerprint; a 4-word **safety number** to compare
-  out loud; assign a private petname. Verifying establishes the session so **both phones flip to
-  verified immediately**. A stranger can't DM you without a scan.
-- **Panic wipe** — press-and-hold to cryptographically erase keys + the encrypted database
-  (hardware-key erasure via Android Keystore). No backup exists anywhere.
-- **Forensics-resistant at rest** — messages and identity live in a **SQLCipher** database keyed
-  by a hardware-wrapped key; `FLAG_SECURE` blocks screenshots and the recents thumbnail.
+  out loud; assign a private petname. Verification is designed to bind a peer to the scanned
+  fingerprint. It does not prove a person's legal identity or guarantee that their device is
+  uncompromised.
+- **Local wipe** — press-and-hold to remove local key material and the encrypted database.
+  It cannot delete recipients' copies or guarantee forensic erasure on every device.
+- **Encrypted local storage** — messages and identity live in a **SQLCipher** database keyed
+  by a hardware-wrapped key; `FLAG_SECURE` requests screenshot and recents protection.
+  Neither is a guarantee against device compromise.
 - **Bilingual UI** — English and **हिन्दी** (Hindi), switchable in-app, chosen at first run.
 
-**Core:** the Rust `meshcore` is green — 57 unit tests + 10 deterministic simulator scenarios
-(broadcast to 200 nodes, partition heal, duplicate-storm suppression, malicious-flooder
-containment, multi-hop relay, store-and-forward, DM handshake retry, and more).
+**Core tests** cover protocol behavior and deterministic simulator scenarios, including
+broadcast to 200 simulated nodes, partition recovery, duplicate suppression, multi-hop relay,
+and DM handshake retries. Simulation results do not establish real-world capacity or safety.
 
 ---
 
@@ -125,37 +153,35 @@ simulator. The native shell owns only the BLE radio and the screen.
 
 ## Honest limits
 
-- **Local clusters, ~50–500 people in physical proximity** — not city-scale realtime chat. BLE
-  physics (5–8 reliable links/phone, limited airtime) doesn't allow it, and we don't pretend it does.
+- **Local experiments only.** The design explores nearby clusters, not city-scale realtime chat.
+  Earlier estimates of 50–500 participants are design targets, not validated capacity claims.
 - **Android only.** There is no iOS app, and iPhones cannot join the mesh at all. In a mixed crowd
   that is a large fraction of people you simply cannot reach. iOS is deferred — see
   [`CONTRIBUTING.md`](CONTRIBUTING.md).
-- **The network needs radios on.** The mesh exists only while people's screens are on and the app
-  is relaying; the UI is honest that screen-on carries the mesh.
+- **The network needs participating devices.** Radios, operating-system restrictions, battery
+  state, and app lifecycle all affect whether a device can relay.
 - **Public channels are public.** Anyone in radio range reads them — there is no lock, ever.
-- **Not yet audited.** The crypto is vetted (Noise via `snow`, ed25519-dalek, SQLCipher), but this
-  has **not** had an external security audit.
+- **Not yet audited.** Using cryptographic libraries does not establish that their integration is
+  secure. This implementation has **not** had an external security audit.
 - **Delivery is best-effort.** No acknowledgements, no guaranteed ordering, no retry forever. A
   message that looks sent may never arrive, and under interference or jamming the mesh may not work
   at all. Never treat "sent" as "delivered" for anything that matters.
 
 See `docs/research-brief.md` for the constraints and prior-art lessons everything is built on.
 
-### If you take this into the field
+### Educational purpose and independence
 
-This is built to be used — in a protest, a blackout, a disaster — and we'd rather it be in your
-hands than withheld until some future perfect version. Use it with your eyes open:
+This project is published for learning and controlled experimentation. It does not promote or
+endorse any political movement, campaign, organization, unlawful activity, or particular
+real-world deployment. References to other projects, companies, devices, and trademarks identify
+technologies or provide attribution; they do not imply affiliation, sponsorship, or endorsement.
 
-- **Always have a fallback that does not depend on this app.** A meeting point, a time, a person.
-- **Never treat "sent" as "delivered"** for anything that matters. Confirm out of band.
-- **Assume transmitting is observable.** Encryption protects what you say, not the fact that a
-  radio near you is speaking.
-- **Verify in person** before trusting a DM's identity. Unverified means unverified.
+The [full notice](DISCLAIMER.md) explains the intended purpose, limits, and relationship to the
+MIT license. This purpose statement does not add restrictions to the permissions in that license.
 
-### What we still owe you
+### Open research and assurance gaps
 
-- **An external security audit.** The single biggest gap. Committed, unscheduled — and we'll say so
-  loudly when it happens, equally loudly if it finds something.
+- **An external security audit.** None has been completed; no date or outcome is promised.
 - **Sustained fuzzing.** Targets exist for the three parsers, but CI runs them 60 s each on PRs:
   regression detection, not a search for new bugs. The Noise handshake and store have no targets.
 - **Reproducible builds**, so a release binary can be checked against source rather than trusted.
@@ -167,7 +193,7 @@ hands than withheld until some future perfect version. Use it with your eyes ope
 **Rust core (any desktop):**
 
 ```bash
-cargo test --workspace                                   # 57 unit tests + scenarios
+cargo test --workspace                                   # unit tests + scenarios
 cargo run -p sim -- --nodes 200 --scenario broadcast     # deterministic mesh sim
 ```
 
@@ -191,11 +217,12 @@ Real BLE needs a **physical phone** (emulators have no Bluetooth radio).
 
 | File | What |
 |---|---|
+| `DISCLAIMER.md` | Educational purpose, non-endorsement, and warranty notice. |
 | `docs/IMPLEMENTATION_PLAN.md` | Full plan: architecture, milestones M0–M6, protocol, security. |
 | `docs/PROGRESS.md` | Live build ledger — what's done, what's next. |
 | `docs/protocol.md` | Normative wire format. |
 | `docs/PERFORMANCE.md` | Performance backlog and tuning notes. |
-| `docs/threat-model.md` | **What this protects against — and what it doesn't.** Read first. |
+| `docs/threat-model.md` | **Security design assumptions and limitations.** Read first. |
 | `docs/research-brief.md` | The constraints and prior-art lessons everything is built on. |
 | `docs/decisions/` | Architecture decision records. |
 | `docs/ai-build-loop.md` | The agent prompt this was built with (see below). |
@@ -209,8 +236,8 @@ drove it is in [`docs/ai-build-loop.md`](docs/ai-build-loop.md), and `docs/PROGR
 resulting task-by-task ledger.
 
 That's worth stating plainly rather than leaving you to guess, because it should change how you read
-the code. Every change was gated on `cargo test --workspace`, `cargo clippy -- -D warnings`, and the
-deterministic simulator scenarios, and the BLE and UI work was verified on physical phones — but
+the code. The project uses automated tests, Clippy, deterministic simulator scenarios, and limited
+physical-phone checks. These checks do not establish security or fitness for a particular use;
 **this has had far fewer human eyes on it than a security tool deserves.** That is precisely why
 the threat model is blunt, why unaudited is stated loudly, and why review contributions are the most
 valuable thing anyone can offer right now.
@@ -249,21 +276,21 @@ This project stands on other people's work.
 [`snow`](https://github.com/mcginty/snow) (Noise protocol),
 [`ed25519-dalek` and `x25519-dalek`](https://github.com/dalek-cryptography),
 the [RustCrypto](https://github.com/RustCrypto) family, and
-[SQLCipher](https://www.zetetic.net/sqlcipher/). Any strength here is theirs; the mistakes are ours.
+[SQLCipher](https://www.zetetic.net/sqlcipher/). Their use is technical attribution, not an endorsement or security guarantee.
 
-**Prior art.** Bridgefy, bitchat, Briar, Meshtastic, FireChat and Serval each taught us something —
-often by failing publicly and honestly. [`docs/research-brief.md`](docs/research-brief.md) records
-what we took from each.
+**Prior art.** The historical [research brief](docs/research-brief.md) cites other mesh and
+messaging projects. These references are for study and do not imply association or endorsement.
 
-Full license inventory: [`NOTICE.md`](NOTICE.md).
+Third-party notice index: [`NOTICE.md`](NOTICE.md).
 
 ---
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE). Bundled fonts and dependencies carry their own terms; see
-[`NOTICE.md`](NOTICE.md).
+MIT — see [`LICENSE`](LICENSE), including its warranty disclaimer and limitation of liability.
+The educational purpose statement does not replace or narrow the MIT permissions. Bundled fonts
+and dependencies carry their own terms; see [`NOTICE.md`](NOTICE.md).
 
 <br>
 
-> *Together we survive. Radios on, mesh alive. Verify in person.*
+> *Study the protocol. Test the assumptions. Understand the limits.*

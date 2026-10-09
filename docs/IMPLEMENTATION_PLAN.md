@@ -1,5 +1,10 @@
 # Cockroach Chat — Implementation Plan
 
+> **Historical development material.** Scenarios, goals, third-party comparisons, and claims below
+> record earlier research or planning; they are not deployment advice, current assurances, or
+> endorsements. The project is now published solely for education, research, and controlled
+> experimentation. See [DISCLAIMER.md](../DISCLAIMER.md).
+
 > **Execution model:** this plan is driven by a Ralph loop. The loop reads `docs/PROGRESS.md`
 > (mutable ledger) and follows `docs/ai-build-loop.md` (standing instructions). This file is the stable,
 > detailed reference — the "what and why." Hard constraints live in `docs/research-brief.md`;

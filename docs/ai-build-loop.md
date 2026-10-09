@@ -1,5 +1,10 @@
 # Cockroach Chat — Ralph build loop prompt
 
+> **Historical development material.** Scenarios, goals, third-party comparisons, and claims below
+> record earlier research or planning; they are not deployment advice, current assurances, or
+> endorsements. The project is now published solely for education, research, and controlled
+> experimentation. See [DISCLAIMER.md](../DISCLAIMER.md).
+
 You are building **Cockroach Chat**, a decentralized, serverless BLE-mesh messenger for
 protests / network blackouts. Shared Rust core (`meshcore`) exposed to native apps via
 UniFFI; Android first, then iOS. Full context: `docs/IMPLEMENTATION_PLAN.md`. Hard

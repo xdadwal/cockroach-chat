@@ -1,5 +1,10 @@
 # PROGRESS — Cockroach Chat build ledger
 
+> **Historical development material.** Scenarios, goals, third-party comparisons, and claims below
+> record earlier research or planning; they are not deployment advice, current assurances, or
+> endorsements. The project is now published solely for education, research, and controlled
+> experimentation. See [DISCLAIMER.md](../DISCLAIMER.md).
+
 This is the **single source of truth for "what's done / what's next."** The Ralph loop
 (and any agent) reads this file first, does the **next unchecked task**, then updates it.
 

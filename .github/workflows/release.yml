@@ -95,12 +95,14 @@ jobs:
             cockroach-chat-*.apk
             SHA256SUMS
           body: |
-            > **Under active development, and unaudited.** It may not work as expected — least of
-            > all in dense crowds, interference or jamming. Delivery is best-effort, so never treat
-            > "sent" as "delivered", and keep a fallback that doesn't need this app. It also cannot
-            > make you anonymous over the air.
-            > Read [the threat model](https://github.com/xdadwal/cockroach-chat/blob/master/docs/threat-model.md)
-            > before deciding it fits your situation.
+            > **Educational prototype — unaudited and provided as-is.** Published solely for
+            > education, research, and controlled experimentation. Not intended for emergencies,
+            > disaster response, personal safety, or other critical use. No guarantee of delivery,
+            > security, anonymity, or availability. References to third parties do not imply
+            > affiliation, sponsorship, or endorsement.
+            > Read the [project notice](https://github.com/xdadwal/cockroach-chat/blob/${{ github.ref_name }}/DISCLAIMER.md)
+            > and [threat model](https://github.com/xdadwal/cockroach-chat/blob/${{ github.ref_name }}/docs/threat-model.md).
+            > The MIT license remains unchanged; educational purpose is not an additional license restriction.
 
             ### Verify what you downloaded
 

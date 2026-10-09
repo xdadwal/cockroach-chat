@@ -11,8 +11,36 @@ git push origin v0.2.0
 ```
 
 Pushing a `v*` tag triggers [`.github/workflows/release.yml`](../.github/workflows/release.yml),
-which cross-compiles the core, builds a signed release APK, and publishes it. Use
+which cross-compiles the core, builds a signed release APK, and creates a **draft** release. Use
 [semantic versioning](https://semver.org/): `MAJOR.MINOR.PATCH`.
+
+Review the draft's APK, checksums, notices, and links before publishing it. Keep the educational
+purpose and non-endorsement notice in the release description. Publish only from the intended
+source commit; a local uncommitted change is not part of a tag-triggered build.
+
+## Notices before publication
+
+The root `LICENSE` remains MIT. `DISCLAIMER.md` states the maintainers' educational purpose;
+it is not an educational-only license restriction or a guarantee against legal claims.
+
+Keep the APK copies identical to the repository notices:
+
+```bash
+cp LICENSE android/app/src/main/assets/licenses/MIT-CockroachChat.txt
+cp DISCLAIMER.md android/app/src/main/assets/licenses/DISCLAIMER.md
+```
+
+When dependencies change, refresh `assets/licenses/THIRD-PARTY.txt` from the locked Cargo graph
+and Android `releaseRuntimeClasspath`. Record exact versions and source locations, preserve
+copyright and attribution texts, and include the vendored SQLCipher/OpenSSL notices and the
+MPL-2.0 license and source availability for UniFFI. The current snapshot includes the full Cargo
+build graph, even packages not shipped on Android. Its header records the dependency-file hashes.
+Cargo license-policy checks alone do not verify binary notice packaging.
+
+Before publishing, run `cargo deny check advisories licenses bans sources`, build the APK,
+and inspect `assets/licenses/` inside it. Verify that the project notices, both font licenses,
+and the dependency inventory are present. Recheck English and Hindi app notice text when it
+changes. See [the review scope and limitations](legal-review.md).
 
 ## How the version reaches the build
 
