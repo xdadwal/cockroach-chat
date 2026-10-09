@@ -88,8 +88,11 @@ sha256sum -c SHA256SUMS
 
 The certificate SHA-256 must match the fingerprint published below.
 
-> **Signing certificate SHA-256:** _not yet published — no signed release exists._
-> This will be filled in with the first tagged release. Until then, build from source.
+> **Signing certificate SHA-256 (v0.1.0):**
+> `c29fbd6af2fe5ba69d86ee7707525d15892e492c1d460fd38b1ffaaa44abbbbb`
+> Compare this certificate digest with `apksigner` output; it is not the APK file checksum.
+> Release APKs and `SHA256SUMS` are available on the
+> [GitHub releases page](https://github.com/xdadwal/cockroach-chat/releases).
 
 Builds are **not yet reproducible**, so a signature proves the artifact came from our build machine
 and nothing more. Reproducible builds are on the roadmap.
