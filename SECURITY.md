@@ -3,21 +3,22 @@
 ## Status: unaudited
 
 Cockroach Chat has **not had an external security audit**. It implements cryptography (Noise XX,
-Ed25519, X25519, SQLCipher) using vetted libraries rather than hand-rolled primitives, and it has a
+Ed25519, X25519, SQLCipher) using established libraries rather than hand-rolled primitives, and it has a
 written [threat model](docs/threat-model.md) — but nobody independent has reviewed the result.
 
-The app is built to be used in the field, and shipping it beats withholding it — but it is under
-active development and **may not work as expected**, particularly under the conditions it exists
-for: dense crowds, interference, jamming, low battery, unfamiliar hardware. Delivery is
-best-effort. Keep a fallback that doesn't depend on it.
+The app is published solely for education, research, and controlled experimentation. It is
+**not intended for emergency, disaster-response, personal-safety, or other critical use**.
+It may fail under interference, low battery, unfamiliar hardware, or ordinary operating conditions.
+Delivery and the intended security properties are not guaranteed. See the
+[educational-purpose and non-endorsement notice](DISCLAIMER.md).
 
-An external audit is a commitment we intend to keep, not a box already ticked.
+An independent audit remains an open assurance gap; no date or result is promised.
 
 Embargoed fixes may be developed privately and merged with less public discussion than usual; the
 reasoning is published alongside the advisory once it's out.
 
-Read [`docs/threat-model.md`](docs/threat-model.md) before deciding this is appropriate for your
-situation. It is explicit about what is *not* defended: over-the-air anonymity, traffic analysis,
+Read [`docs/threat-model.md`](docs/threat-model.md) before experimenting. It is explicit about
+what is *not* defended: over-the-air anonymity, traffic analysis,
 Sybil attacks without out-of-band verification, an unlocked seized device, a compromised OS, and
 jamming.
 

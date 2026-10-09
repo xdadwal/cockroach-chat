@@ -1,7 +1,8 @@
 # Contributing to Cockroach Chat
 
-Thanks for being here. This is a mesh messenger meant to work when the network doesn't, and it is
-built by a small number of people — outside help genuinely moves it.
+This is an educational experiment in Bluetooth mesh messaging. Contributions should support
+learning, reproducible experiments, and accurate documentation of limitations. See
+[DISCLAIMER.md](DISCLAIMER.md) for the project's intended purpose and non-endorsement notice.
 
 **Found a security vulnerability? Stop and read [`SECURITY.md`](SECURITY.md).** Report privately,
 never in a public issue.
@@ -184,7 +185,7 @@ restate the code — the existing codebase is a reasonable guide to the density 
 
 ## Honesty rules
 
-This is a tool people might rely on in genuinely dangerous situations, so:
+An educational prototype can still be mistaken for a dependable service, so:
 
 - **Never claim something works without running it.** Paste the command and its output.
 - **Never make the UI imply more safety than exists.** "Never fake trust, never fake connectivity"

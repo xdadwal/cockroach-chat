@@ -11,14 +11,16 @@ Referenced by `docs/IMPLEMENTATION_PLAN.md`. Normative protocol numbers live in
 
 ---
 
-## Who this is for
+## Research scenarios
 
-A person in a crowd — protest, disaster zone, blackout — whose phone has no working internet or
-cell service, who needs to reach people nearby, and for whom being **identified** as the author of
-a message can carry consequences well beyond the message itself.
+This educational model studies nearby devices exchanging messages without internet or cellular
+service, including the consequences of linking a device or person to a message. Historical
+planning explored high-risk scenarios to identify failure modes; those scenarios are not intended
+uses or recommendations. The project is not intended for emergencies, disaster response, or
+personal safety. See [DISCLAIMER.md](../DISCLAIMER.md).
 
-That last clause is why "the messages are encrypted" is not a sufficient answer anywhere in this
-document. **Metadata is the risk.** Radio presence is metadata we cannot fully hide.
+The risk of linking a device or person to a message is why "the messages are encrypted" is not a
+sufficient answer in this model. Radio presence is metadata we cannot fully hide.
 
 ## Assets
 

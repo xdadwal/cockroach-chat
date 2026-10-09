@@ -1,5 +1,10 @@
 # Research Brief — BLE Mesh Protest Messenger
 
+> **Historical development material.** Scenarios, goals, third-party comparisons, and claims below
+> record earlier research or planning; they are not deployment advice, current assurances, or
+> endorsements. The project is now published solely for education, research, and controlled
+> experimentation. See [DISCLAIMER.md](../DISCLAIMER.md).
+
 > Synthesized from a 6-agent research sweep (bitchat, iOS/Android BLE limits, prior-art failures, mesh scaling theory, protest security, stack options). Preserved here because the original ran in an ephemeral workspace. This is source material for the implementation plan; numbers here are treated as hard constraints.
 
 # Planning Brief: Decentralized BLE-Mesh Protest Messenger (iOS+Android, ~100K-user city scale)
