@@ -11,6 +11,27 @@ blackouts. Named for the thing that survives when the lights go out.
 Every phone is both a client and a relay. Messages hop phone-to-phone across a dense crowd, so
 the network exists only as long as people's radios are on — and it belongs to no one.
 
+**[Download the Android APK (v0.1.0)](https://github.com/xdadwal/cockroach-chat/releases/download/v0.1.0/cockroach-chat-0.1.0.apk)**
+· [All releases and checksums](https://github.com/xdadwal/cockroach-chat/releases)
+
+## Install on Android
+
+Requires **Android 8.0 or newer**. The APK supports ARM64, 32-bit ARM, and x86_64 devices.
+
+1. Open the download link above on your phone and download `cockroach-chat-0.1.0.apk`.
+2. Open the downloaded file. If Android asks, allow **Install unknown apps** for the browser
+   or file manager you used, then tap **Install**. You can turn that permission off afterward.
+3. Open Cockroach Chat, turn on Bluetooth, and grant the permissions requested for nearby discovery.
+   Nearby users also need the app installed to chat over the mesh.
+
+Future releases signed with the same release key can update the app in place. A development APK
+uses a different signing key: Android cannot replace it with this release. Uninstalling it first
+erases its local identity and messages, so only do that if you are ready to lose that data.
+
+The release includes `SHA256SUMS`; see [SECURITY.md](SECURITY.md#verifying-a-release) for checksum
+and signing-certificate verification. The app is under active development and unaudited; read
+the limitations below before relying on it.
+
 > ## ⚠️ Under active development — and unaudited
 >
 > This app is meant to be used in the field, and we'd rather it be in your hands than withheld.
